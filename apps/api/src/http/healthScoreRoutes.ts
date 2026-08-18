@@ -4,6 +4,7 @@ import {
   getRepositoryScoreById,
   getRepositoryScores
 } from "../application/healthScoringService.js";
+import { sendApiError } from "./errorEnvelope.js";
 
 export const healthScoreRoutes = Router();
 
@@ -22,9 +23,10 @@ healthScoreRoutes.get("/repositories/:id", (req, res) => {
   const result = getRepositoryScoreById(req.params.id, scenario);
 
   if (!result.repository) {
-    res.status(404).json({
-      scenario: result.scenario,
-      error: "Repository not found for scenario"
+    sendApiError(res, {
+      status: 404,
+      code: "NOT_FOUND",
+      message: "Repository not found for scenario."
     });
     return;
   }

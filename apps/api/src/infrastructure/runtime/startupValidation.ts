@@ -1,0 +1,14 @@
+import { getGitHubConfig } from "../github/config.js";
+
+export function validateStartupConfiguration(): void {
+  const rawPort = process.env.PORT;
+  if (typeof rawPort === "string") {
+    const parsedPort = Number(rawPort);
+    if (!Number.isInteger(parsedPort) || parsedPort <= 0 || parsedPort > 65535) {
+      throw new Error("Invalid PORT value. Expected an integer between 1 and 65535.");
+    }
+  }
+
+  // Validate GitHub configuration format deterministically at startup.
+  getGitHubConfig();
+}

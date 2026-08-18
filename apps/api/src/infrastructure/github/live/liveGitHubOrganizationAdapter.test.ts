@@ -41,7 +41,7 @@ describe("LiveGitHubOrganizationAdapter", () => {
   it("ingests security/governance/cicd/quality/review signals in live mode", async () => {
     process.env.GITHUB_TOKEN = "test-token";
 
-    const fetchMock = vi.fn<typeof fetch>();
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse([]));
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock
@@ -80,20 +80,25 @@ describe("LiveGitHubOrganizationAdapter", () => {
     expect(result.issues).toHaveLength(0);
     const metrics = result.repositories[0]?.metrics;
     expect(metrics?.security_alerts_open).toBe(2);
+    expect(metrics?.code_scanning_alerts_open).toBe(0);
     expect(metrics?.vuln_resolution_rate).toBe(60);
     expect(metrics?.branch_protection_coverage).toBe(100);
     expect(metrics?.review_compliance_rate).toBe(100);
+    expect(metrics?.pull_request_review_queue_age_days).toBeUndefined();
     expect(metrics?.ci_success_rate).toBe(100);
     expect(metrics?.deployment_frequency_weekly).toBeGreaterThan(0);
+    expect(metrics?.workflow_failure_rate).toBe(0);
     expect(metrics?.test_coverage).toBe(100);
     expect(metrics?.dependency_freshness).toBeDefined();
     expect(metrics?.issue_hygiene).toBeDefined();
+    expect(metrics?.dependabot_alert_age_days).toBeUndefined();
+    expect(metrics?.stale_issue_age_days).toBeUndefined();
   });
 
   it("keeps branch protection undefined when upstream value is unknown", async () => {
     process.env.GITHUB_TOKEN = "test-token";
 
-    const fetchMock = vi.fn<typeof fetch>();
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse([]));
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock
@@ -123,6 +128,11 @@ describe("LiveGitHubOrganizationAdapter", () => {
     expect(metrics?.branch_protection_coverage).toBeUndefined();
     expect(metrics?.review_compliance_rate).toBeUndefined();
     expect(metrics?.vuln_resolution_rate).toBeUndefined();
+    expect(metrics?.code_scanning_alerts_open).toBeUndefined();
+    expect(metrics?.pull_request_review_queue_age_days).toBeUndefined();
+    expect(metrics?.workflow_failure_rate).toBeUndefined();
+    expect(metrics?.dependabot_alert_age_days).toBeUndefined();
+    expect(metrics?.stale_issue_age_days).toBeUndefined();
     expect(result.issues.some((issue) => issue.code === "PERMISSION_DENIED")).toBe(true);
     expect(result.issues.some((issue) => issue.message.includes("Vulnerability resolved count is unavailable."))).toBe(true);
   });
@@ -132,7 +142,7 @@ describe("LiveGitHubOrganizationAdapter", () => {
     process.env.GITHUB_REPOSITORY_CONCURRENCY = "1";
     process.env.GITHUB_SIGNAL_CONCURRENCY = "1";
 
-    const fetchMock = vi.fn<typeof fetch>();
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse([]));
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock
@@ -181,7 +191,7 @@ describe("LiveGitHubOrganizationAdapter", () => {
     process.env.GITHUB_REPOSITORY_CONCURRENCY = "1";
     process.env.GITHUB_SIGNAL_CONCURRENCY = "1";
 
-    const fetchMock = vi.fn<typeof fetch>();
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse([]));
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock
@@ -236,7 +246,7 @@ describe("LiveGitHubOrganizationAdapter", () => {
     process.env.GITHUB_REPOSITORY_CONCURRENCY = "1";
     process.env.GITHUB_SIGNAL_CONCURRENCY = "1";
 
-    const fetchMock = vi.fn<typeof fetch>();
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse([]));
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock
@@ -441,7 +451,7 @@ describe("LiveGitHubOrganizationAdapter", () => {
     process.env.GITHUB_TOKEN = "test-token";
     process.env.GITHUB_MAX_RETRIES = "0";
 
-    const fetchMock = vi.fn<typeof fetch>();
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse([]));
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ message: "Server error" }, 500));
@@ -463,7 +473,7 @@ describe("LiveGitHubOrganizationAdapter", () => {
     process.env.GITHUB_TOKEN = "test-token";
     process.env.GITHUB_MAX_RETRIES = "0";
 
-    const fetchMock = vi.fn<typeof fetch>();
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse([]));
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock
@@ -487,7 +497,7 @@ describe("LiveGitHubOrganizationAdapter", () => {
     process.env.GITHUB_TOKEN = "test-token";
     process.env.GITHUB_MAX_RETRIES = "0";
 
-    const fetchMock = vi.fn<typeof fetch>();
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse([]));
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock.mockResolvedValueOnce(
@@ -530,5 +540,56 @@ describe("LiveGitHubOrganizationAdapter", () => {
     });
 
     expect(seenUrls[0]).toContain("/orgs/org%2Fwith%2Fslash");
+  });
+
+  it("collects deeper optional signals when GitHub provides them", async () => {
+    process.env.GITHUB_TOKEN = "test-token";
+    process.env.GITHUB_REPOSITORY_CONCURRENCY = "1";
+    process.env.GITHUB_SIGNAL_CONCURRENCY = "1";
+
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse([]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ login: "org", name: "Org" }))
+      .mockResolvedValueOnce(jsonResponse([
+        {
+          name: "repo-a",
+          pushed_at: "2026-01-01T00:00:00.000Z",
+          archived: false,
+          protected: true,
+          open_issues_count: 2,
+          default_branch: "main"
+        }
+      ]))
+      .mockResolvedValueOnce(jsonResponse([{ number: 1, created_at: "2025-12-01T00:00:00.000Z" }]))
+      .mockResolvedValueOnce(jsonResponse([{ number: 2, created_at: "2025-12-02T00:00:00.000Z" }]))
+      .mockResolvedValueOnce(jsonResponse([
+        { name: "build", conclusion: "failure", created_at: "2026-01-02T00:00:00.000Z" },
+        { name: "test", conclusion: "success", created_at: "2026-01-03T00:00:00.000Z" }
+      ]))
+      .mockResolvedValueOnce(jsonResponse({ required_pull_request_reviews: { required_approving_review_count: 1 } }))
+      .mockResolvedValueOnce(jsonResponse([
+        { created_at: "2025-12-20T00:00:00.000Z" },
+        { created_at: "2025-12-25T00:00:00.000Z" }
+      ]))
+      .mockResolvedValueOnce(jsonResponse([
+        { created_at: "2025-12-18T00:00:00.000Z", draft: false },
+        { created_at: "2025-12-24T00:00:00.000Z", draft: false }
+      ]))
+      .mockResolvedValueOnce(jsonResponse([
+        { created_at: "2025-12-10T00:00:00.000Z" },
+        { created_at: "2025-12-14T00:00:00.000Z", pull_request: { url: "x" } }
+      ]));
+
+    const adapter = new LiveGitHubOrganizationAdapter();
+    const result = await adapter.fetchOrganizationData({ organization: "org", source: "live" });
+
+    const metrics = result.repositories[0]?.metrics;
+    expect(metrics?.code_scanning_alerts_open).toBe(2);
+    expect(metrics?.pull_request_review_queue_age_days).toBeGreaterThan(0);
+    expect(metrics?.workflow_failure_rate).toBe(50);
+    expect(metrics?.dependabot_alert_age_days).toBeGreaterThan(0);
+    expect(metrics?.stale_issue_age_days).toBeGreaterThan(0);
   });
 });

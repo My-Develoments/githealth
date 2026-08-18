@@ -105,14 +105,19 @@ function mapRepository(input: GitHubRepositorySignalInput): GitHubNormalizedRepo
         ? clamp(input.activityRecencyDays, 0, 365)
         : daysSince(input.repository.pushedAt),
     security_alerts_open: input.security?.openAlerts,
+    code_scanning_alerts_open: input.security?.codeScanningAlertsOpen,
     vuln_resolution_rate: vulnerabilityResolution.value,
     branch_protection_coverage: input.governance?.branchProtectionCoverage,
     review_compliance_rate: input.governance?.reviewComplianceRate,
+    pull_request_review_queue_age_days: input.governance?.pullRequestReviewQueueAgeDays,
     ci_success_rate: input.cicd?.ciSuccessRate,
     deployment_frequency_weekly: input.cicd?.deploymentFrequencyWeekly,
+    workflow_failure_rate: input.cicd?.workflowFailureRate,
     test_coverage: input.quality?.testCoverage,
     dependency_freshness: input.quality?.dependencyFreshness,
-    issue_hygiene: input.quality?.issueHygiene
+    dependabot_alert_age_days: input.quality?.dependabotAlertAgeDays,
+    issue_hygiene: input.quality?.issueHygiene,
+    stale_issue_age_days: input.repositoryHealth?.staleIssueAgeDays
   };
 
   metrics.repo_signal_coverage = computeSignalCoverage(metrics, input.signalCoverage);

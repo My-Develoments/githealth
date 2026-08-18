@@ -19,20 +19,27 @@ const FIXTURES: MockFixture = {
         security: {
           openAlerts: 1,
           vulnerabilitiesResolved: 19,
-          vulnerabilitiesTotal: 20
+          vulnerabilitiesTotal: 20,
+          codeScanningAlertsOpen: 0
         },
         governance: {
           branchProtectionCoverage: 100,
-          reviewComplianceRate: 95
+          reviewComplianceRate: 95,
+          pullRequestReviewQueueAgeDays: 2
         },
         cicd: {
           ciSuccessRate: 96,
-          deploymentFrequencyWeekly: 14
+          deploymentFrequencyWeekly: 14,
+          workflowFailureRate: 4
         },
         quality: {
           testCoverage: 91,
           dependencyFreshness: 88,
-          issueHygiene: 86
+          issueHygiene: 86,
+          dependabotAlertAgeDays: 4
+        },
+        repositoryHealth: {
+          staleIssueAgeDays: 3
         },
         signalCoverage: 96,
         activityRecencyDays: 1
@@ -46,20 +53,27 @@ const FIXTURES: MockFixture = {
         security: {
           openAlerts: 2,
           vulnerabilitiesResolved: 18,
-          vulnerabilitiesTotal: 20
+          vulnerabilitiesTotal: 20,
+          codeScanningAlertsOpen: 1
         },
         governance: {
           branchProtectionCoverage: 100,
-          reviewComplianceRate: 91
+          reviewComplianceRate: 91,
+          pullRequestReviewQueueAgeDays: 1
         },
         cicd: {
           ciSuccessRate: 94,
-          deploymentFrequencyWeekly: 16
+          deploymentFrequencyWeekly: 16,
+          workflowFailureRate: 6
         },
         quality: {
           testCoverage: 87,
           dependencyFreshness: 84,
-          issueHygiene: 82
+          issueHygiene: 82,
+          dependabotAlertAgeDays: 5
+        },
+        repositoryHealth: {
+          staleIssueAgeDays: 5
         },
         signalCoverage: 94,
         activityRecencyDays: 1
@@ -73,20 +87,27 @@ const FIXTURES: MockFixture = {
         security: {
           openAlerts: 8,
           vulnerabilitiesResolved: 14,
-          vulnerabilitiesTotal: 20
+          vulnerabilitiesTotal: 20,
+          codeScanningAlertsOpen: 4
         },
         governance: {
           branchProtectionCoverage: 78,
-          reviewComplianceRate: 74
+          reviewComplianceRate: 74,
+          pullRequestReviewQueueAgeDays: 7
         },
         cicd: {
           ciSuccessRate: 76,
-          deploymentFrequencyWeekly: 6
+          deploymentFrequencyWeekly: 6,
+          workflowFailureRate: 24
         },
         quality: {
           testCoverage: 68,
           dependencyFreshness: 63,
-          issueHygiene: 58
+          issueHygiene: 58,
+          dependabotAlertAgeDays: 14
+        },
+        repositoryHealth: {
+          staleIssueAgeDays: 18
         },
         signalCoverage: 90,
         activityRecencyDays: 4
@@ -100,20 +121,27 @@ const FIXTURES: MockFixture = {
         security: {
           openAlerts: 4,
           vulnerabilitiesResolved: 16,
-          vulnerabilitiesTotal: 20
+          vulnerabilitiesTotal: 20,
+          codeScanningAlertsOpen: 2
         },
         governance: {
           branchProtectionCoverage: 80,
-          reviewComplianceRate: 77
+          reviewComplianceRate: 77,
+          pullRequestReviewQueueAgeDays: 4
         },
         cicd: {
           ciSuccessRate: 79,
-          deploymentFrequencyWeekly: 4
+          deploymentFrequencyWeekly: 4,
+          workflowFailureRate: 18
         },
         quality: {
           testCoverage: 72,
           dependencyFreshness: 70,
-          issueHygiene: 69
+          issueHygiene: 69,
+          dependabotAlertAgeDays: 9
+        },
+        repositoryHealth: {
+          staleIssueAgeDays: 11
         },
         signalCoverage: 82,
         activityRecencyDays: 7

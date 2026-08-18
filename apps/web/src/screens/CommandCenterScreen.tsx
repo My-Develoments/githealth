@@ -106,7 +106,11 @@ function pulsePath(values: number[], width: number, height: number) {
   return sparklinePath(values, width, height);
 }
 
-export function CommandCenterScreen() {
+type CommandCenterScreenProps = {
+  onExploreUniverse?: () => void;
+};
+
+export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenProps) {
   const { activity } = commandCenterData;
   const reducedMotion = usePrefersReducedMotion();
 
@@ -211,6 +215,7 @@ export function CommandCenterScreen() {
               selected={Boolean(item.active)}
               className="cc-nav-item"
               aria-current={item.active ? "page" : undefined}
+              onClick={item.id === "repository-universe" ? onExploreUniverse : undefined}
             >
               {item.label}
             </Button>
@@ -445,7 +450,7 @@ export function CommandCenterScreen() {
               </div>
             </div>
 
-            <Button variant="secondary" size="sm">
+            <Button variant="primary" size="sm" onClick={onExploreUniverse}>
               Explore Universe
             </Button>
           </Panel>

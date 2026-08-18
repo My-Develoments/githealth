@@ -1,16 +1,13 @@
 import { Badge, Button, Heading, Panel, Text } from "@githealth/ui";
 import { useEffect, useMemo, useState } from "react";
 import {
-  universeConnections,
   universeDomainFilters,
   universeFilters,
-  universeOrganization,
-  universeRepositories,
-  universeRecentActivity,
-  universeTopInsights,
   type HealthStatus,
   type UniverseRepository
 } from "../../mock/repositoryUniverseData";
+import type { GitHubHealthIntegrationState } from "../../data/githubHealthContracts";
+import type { RepositoryUniverseViewModel } from "../../data/githubHealthViewMappers";
 import { RepositoryDetailsPanel } from "./components/RepositoryDetailsPanel";
 import { UniverseInsightsPanel } from "./components/UniverseInsightsPanel";
 import { UniverseVisualization } from "./components/UniverseVisualization";
@@ -18,9 +15,16 @@ import "./repository-universe.css";
 
 type RepositoryUniverseScreenProps = {
   onBack: () => void;
+  viewModel: RepositoryUniverseViewModel;
+  integrationState: GitHubHealthIntegrationState;
+  integrationError: {
+    message: string;
+    code: string;
+    status: number;
+  } | null;
+  onRetry: () => void;
 };
 
-type DataState = "loading" | "ready" | "error";
 type DomainFilter = "all" | "security" | "governance" | "cicd" | "quality";
 
 function usePrefersReducedMotion() {
@@ -63,33 +67,36 @@ function matchesDomain(repository: UniverseRepository, filter: DomainFilter): bo
   return repository.qualityScore < 88;
 }
 
-export function RepositoryUniverseScreen({ onBack }: RepositoryUniverseScreenProps) {
+export function RepositoryUniverseScreen({ onBack, viewModel, integrationState, integrationError, onRetry }: RepositoryUniverseScreenProps) {
   const reducedMotion = usePrefersReducedMotion();
-  const [dataState, setDataState] = useState<DataState>("loading");
   const [statusFilter, setStatusFilter] = useState<"all" | HealthStatus>("all");
   const [domainFilter, setDomainFilter] = useState<DomainFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedRepositoryId, setSelectedRepositoryId] = useState<string | null>("frontend-web");
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState<string | null>(null);
   const [hoveredRepositoryId, setHoveredRepositoryId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
+  const dataState = integrationState === "loading" ? "loading" : integrationState === "error" || integrationState === "failed" ? "error" : "ready";
+
   useEffect(() => {
-    if (dataState !== "loading") {
+    if (viewModel.repositories.length === 0) {
+      setSelectedRepositoryId(null);
       return;
     }
-    const delay = reducedMotion ? 260 : 1050;
-    const timer = window.setTimeout(() => {
-      setDataState("ready");
-    }, delay);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [dataState, reducedMotion]);
+
+    const stillExists = selectedRepositoryId
+      ? viewModel.repositories.some((repository) => repository.id === selectedRepositoryId)
+      : false;
+
+    if (!stillExists) {
+      setSelectedRepositoryId(viewModel.repositories[0].id);
+    }
+  }, [selectedRepositoryId, viewModel.repositories]);
 
   const filteredRepositories = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
-    return universeRepositories.filter((repository) => {
+    return viewModel.repositories.filter((repository) => {
       if (statusFilter !== "all" && repository.status !== statusFilter) {
         return false;
       }
@@ -111,8 +118,8 @@ export function RepositoryUniverseScreen({ onBack }: RepositoryUniverseScreenPro
     if (!selectedRepositoryId) {
       return null;
     }
-    return universeRepositories.find((repository) => repository.id === selectedRepositoryId) ?? null;
-  }, [selectedRepositoryId]);
+    return viewModel.repositories.find((repository) => repository.id === selectedRepositoryId) ?? null;
+  }, [selectedRepositoryId, viewModel.repositories]);
 
   const hasNoResults = dataState === "ready" && filteredRepositories.length === 0;
 
@@ -132,16 +139,15 @@ export function RepositoryUniverseScreen({ onBack }: RepositoryUniverseScreenPro
         </div>
 
         <div className="ru-header-actions">
-          <Badge tone="neutral">{universeOrganization.repositories} repositories</Badge>
-          <Button variant="tertiary" size="sm" selected={dataState === "loading"} onClick={() => setDataState("loading")}>
-            Loading
-          </Button>
-          <Button variant="tertiary" size="sm" selected={dataState === "ready"} onClick={() => setDataState("ready")}>
-            Live
-          </Button>
-          <Button variant="tertiary" size="sm" selected={dataState === "error"} onClick={() => setDataState("error")}>
-            Error
-          </Button>
+          <Badge tone="neutral">{viewModel.organization.repositories} repositories</Badge>
+          <Badge tone={integrationState === "partial" ? "warning" : integrationState === "failed" || integrationState === "error" ? "critical" : "healthy"}>
+            {integrationState}
+          </Badge>
+          {(integrationState === "error" || integrationState === "failed") && (
+            <Button variant="secondary" size="sm" onClick={onRetry}>
+              Retry
+            </Button>
+          )}
         </div>
       </header>
 
@@ -212,9 +218,9 @@ export function RepositoryUniverseScreen({ onBack }: RepositoryUniverseScreenPro
             <Heading as="h2" size="lg">
               Universe Visualization Unavailable
             </Heading>
-            <Text tone="secondary">Repository topology service failed to respond. Retry to restore live engineering signals.</Text>
+            <Text tone="secondary">{integrationError?.message ?? "Repository topology service failed to respond. Retry to restore live engineering signals."}</Text>
             <div className="ru-error-actions">
-              <Button variant="primary" onClick={() => setDataState("loading")}>
+              <Button variant="primary" onClick={onRetry}>
                 Retry Universe
               </Button>
               <Button variant="secondary" onClick={onBack}>
@@ -249,10 +255,10 @@ export function RepositoryUniverseScreen({ onBack }: RepositoryUniverseScreenPro
               </Panel>
             ) : (
               <UniverseVisualization
-                organizationName={universeOrganization.name}
-                organizationScore={universeOrganization.score}
-                repositories={universeRepositories}
-                connections={universeConnections}
+                organizationName={viewModel.organization.name}
+                organizationScore={viewModel.organization.score}
+                repositories={viewModel.repositories}
+                connections={viewModel.connections}
                 visibleRepositoryIds={visibleRepositoryIds}
                 hoveredRepositoryId={hoveredRepositoryId}
                 selectedRepositoryId={selectedRepositoryId}
@@ -278,9 +284,9 @@ export function RepositoryUniverseScreen({ onBack }: RepositoryUniverseScreenPro
           <aside className="ru-layout-side ru-stage ru-stage-side">
             <RepositoryDetailsPanel repository={selectedRepository} onClose={() => setSelectedRepositoryId(null)} />
             <UniverseInsightsPanel
-              insights={universeTopInsights}
-              activity={universeRecentActivity}
-              repositories={filteredRepositories.length > 0 ? filteredRepositories : universeRepositories}
+              insights={viewModel.insights}
+              activity={viewModel.activity}
+              repositories={filteredRepositories.length > 0 ? filteredRepositories : viewModel.repositories}
             />
           </aside>
         </section>

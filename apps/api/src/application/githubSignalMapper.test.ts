@@ -18,20 +18,27 @@ describe("mapGitHubSignalsToNormalizedOrganization", () => {
           security: {
             openAlerts: 3,
             vulnerabilitiesResolved: 17,
-            vulnerabilitiesTotal: 20
+            vulnerabilitiesTotal: 20,
+            codeScanningAlertsOpen: 2
           },
           governance: {
             branchProtectionCoverage: 95,
-            reviewComplianceRate: 92
+            reviewComplianceRate: 92,
+            pullRequestReviewQueueAgeDays: 3
           },
           cicd: {
             ciSuccessRate: 94,
-            deploymentFrequencyWeekly: 8
+            deploymentFrequencyWeekly: 8,
+            workflowFailureRate: 6
           },
           quality: {
             testCoverage: 88,
             dependencyFreshness: 80,
-            issueHygiene: 79
+            issueHygiene: 79,
+            dependabotAlertAgeDays: 5
+          },
+          repositoryHealth: {
+            staleIssueAgeDays: 9
           },
           signalCoverage: 98,
           activityRecencyDays: 2
@@ -44,14 +51,19 @@ describe("mapGitHubSignalsToNormalizedOrganization", () => {
     expect(metrics?.repo_signal_coverage).toBe(98);
     expect(metrics?.repo_activity_recency_days).toBe(2);
     expect(metrics?.security_alerts_open).toBe(3);
+    expect(metrics?.code_scanning_alerts_open).toBe(2);
     expect(metrics?.vuln_resolution_rate).toBe(85);
     expect(metrics?.branch_protection_coverage).toBe(95);
     expect(metrics?.review_compliance_rate).toBe(92);
+    expect(metrics?.pull_request_review_queue_age_days).toBe(3);
     expect(metrics?.ci_success_rate).toBe(94);
     expect(metrics?.deployment_frequency_weekly).toBe(8);
+    expect(metrics?.workflow_failure_rate).toBe(6);
     expect(metrics?.test_coverage).toBe(88);
     expect(metrics?.dependency_freshness).toBe(80);
     expect(metrics?.issue_hygiene).toBe(79);
+    expect(metrics?.dependabot_alert_age_days).toBe(5);
+    expect(metrics?.stale_issue_age_days).toBe(9);
     expect(result.fetchStatus).toBe("complete");
   });
 
@@ -118,13 +130,18 @@ describe("mapGitHubSignalsToNormalizedOrganization", () => {
 
     const metrics = result.repositories[0]?.metrics;
     expect(metrics?.security_alerts_open).toBeUndefined();
+    expect(metrics?.code_scanning_alerts_open).toBeUndefined();
     expect(metrics?.branch_protection_coverage).toBeUndefined();
     expect(metrics?.review_compliance_rate).toBeUndefined();
+    expect(metrics?.pull_request_review_queue_age_days).toBeUndefined();
     expect(metrics?.ci_success_rate).toBeUndefined();
     expect(metrics?.deployment_frequency_weekly).toBeUndefined();
+    expect(metrics?.workflow_failure_rate).toBeUndefined();
     expect(metrics?.test_coverage).toBeUndefined();
     expect(metrics?.dependency_freshness).toBeUndefined();
     expect(metrics?.issue_hygiene).toBeUndefined();
+    expect(metrics?.dependabot_alert_age_days).toBeUndefined();
+    expect(metrics?.stale_issue_age_days).toBeUndefined();
   });
 
   it("marks partial when adapter issues are present even if repository mapping succeeded", () => {

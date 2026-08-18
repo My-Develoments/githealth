@@ -33,6 +33,23 @@ type WorkflowRunsResponse = {
 
 type DependabotAlert = {
   number: number;
+  created_at?: string;
+};
+
+type CodeScanningAlert = {
+  created_at?: string;
+};
+
+type PullRequest = {
+  created_at?: string;
+  draft?: boolean;
+};
+
+type IssueRecord = {
+  created_at?: string;
+  updated_at?: string;
+  submitted_at?: string;
+  pull_request?: { url?: string } | null;
 };
 
 type JsonResponse<T> = {
@@ -51,8 +68,8 @@ type RepositoryMappingResult = {
 };
 
 type SignalTaskResult = {
-  key: "dependabot-open" | "dependabot-fixed" | "workflow-runs" | "protection";
-  items?: DependabotAlert[] | WorkflowRun[];
+  key: "dependabot-open" | "dependabot-fixed" | "workflow-runs" | "protection" | "code-scanning-alerts" | "pull-requests" | "issues";
+  items?: DependabotAlert[] | WorkflowRun[] | CodeScanningAlert[] | PullRequest[] | IssueRecord[];
   data?: ProtectionResponse;
   issues: GitHubAdapterIssue[];
 };
@@ -84,6 +101,56 @@ function toDate(value: string | undefined): number | undefined {
 
   const timestamp = new Date(value).getTime();
   return Number.isNaN(timestamp) ? undefined : timestamp;
+}
+
+function averageDaysSince<T extends { created_at?: string }>(items: T[]): number | undefined {
+  if (items.length === 0) {
+    return undefined;
+  }
+
+  const ages = items
+    .map((item) => daysSince(item.created_at))
+    .filter((value): value is number => typeof value === "number");
+
+  if (ages.length === 0) {
+    return undefined;
+  }
+
+  return clamp(ages.reduce((sum, value) => sum + value, 0) / ages.length, 0, 3650);
+}
+
+function oldestDaysSince<T extends { created_at?: string; updated_at?: string; submitted_at?: string }>(items: T[]): number | undefined {
+  if (items.length === 0) {
+    return undefined;
+  }
+
+  const ages = items
+    .map((item) => daysSince(item.created_at ?? item.updated_at ?? item.submitted_at))
+    .filter((value): value is number => typeof value === "number");
+
+  if (ages.length === 0) {
+    return undefined;
+  }
+
+  return clamp(Math.max(...ages), 0, 3650);
+}
+
+function computeDependabotAlertAgeDays(alerts: DependabotAlert[] | undefined): number | undefined {
+  if (!alerts || alerts.length === 0) {
+    return undefined;
+  }
+
+  const datedAge = oldestDaysSince(alerts);
+  return typeof datedAge === "number" ? datedAge : undefined;
+}
+
+function workflowFailureRate(runs: WorkflowRun[]): number | undefined {
+  if (runs.length === 0) {
+    return undefined;
+  }
+
+  const failedRuns = runs.filter((run) => run.conclusion && run.conclusion !== "success").length;
+  return clamp((failedRuns / runs.length) * 100, 0, 100);
 }
 
 function safeName(value: string): string {
@@ -183,7 +250,6 @@ async function requestJsonResponse<T>(url: string, token: string, timeoutMs: num
     clearTimeout(timeout);
   }
 }
-
 async function requestJsonWithRetry<T>(url: string, config: GitHubConfig): Promise<JsonResponse<T>> {
   return runWithRateLimitRetry(
     () => requestJsonResponse<T>(url, config.token as string, config.timeoutMs),
@@ -210,7 +276,10 @@ async function requestPaginated<TPage, TItem>(
 
   while (nextUrl && page <= config.maxPaginationPages) {
     const response = await requestJsonWithRetry<TPage>(nextUrl, config);
-    items.push(...extractItems(response.data));
+    const extractedItems = extractItems(response.data);
+    if (Array.isArray(extractedItems)) {
+      items.push(...extractedItems);
+    }
     nextUrl = getNextLink(response.headers);
     page += 1;
   }
@@ -393,6 +462,9 @@ async function mapRepositorySlice(
   const dependabotOpenPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/dependabot/alerts?state=open`;
   const dependabotFixedPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/dependabot/alerts?state=fixed`;
   const workflowRunsPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/actions/runs?status=completed`;
+  const codeScanningAlertsPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/code-scanning/alerts?state=open`;
+  const pullRequestsPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/pulls?state=open&sort=created&direction=desc`;
+  const issuesPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/issues?state=open&sort=created&direction=asc`;
 
   const protectionPath = defaultBranch
     ? `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/branches/${safeName(defaultBranch)}/protection`
@@ -436,7 +508,7 @@ async function mapRepositorySlice(
           config,
           "Workflow runs",
           input.name,
-          (page) => page.workflow_runs ?? []
+          (page) => (Array.isArray(page) ? page : page.workflow_runs ?? [])
         );
 
         return {
@@ -466,6 +538,51 @@ async function mapRepositorySlice(
           data: result.data,
           issues: result.issues
         };
+      },
+      async () => {
+        const result = await requestOptionalPaginated<CodeScanningAlert[], CodeScanningAlert>(
+          codeScanningAlertsPath,
+          config,
+          "Code scanning alerts",
+          input.name,
+          (page) => page
+        );
+
+        return {
+          key: "code-scanning-alerts" as const,
+          items: result.items,
+          issues: result.issues
+        };
+      },
+      async () => {
+        const result = await requestOptionalPaginated<PullRequest[], PullRequest>(
+          pullRequestsPath,
+          config,
+          "Pull requests",
+          input.name,
+          (page) => page
+        );
+
+        return {
+          key: "pull-requests" as const,
+          items: result.items,
+          issues: result.issues
+        };
+      },
+      async () => {
+        const result = await requestOptionalPaginated<IssueRecord[], IssueRecord>(
+          issuesPath,
+          config,
+          "Repository issues",
+          input.name,
+          (page) => page
+        );
+
+        return {
+          key: "issues" as const,
+          items: result.items,
+          issues: result.issues
+        };
       }
     ],
     config.signalConcurrency,
@@ -475,6 +592,9 @@ async function mapRepositorySlice(
   const dependabotOpen = signalResults.find((result) => result.key === "dependabot-open")?.items as DependabotAlert[] | undefined;
   const dependabotFixed = signalResults.find((result) => result.key === "dependabot-fixed")?.items as DependabotAlert[] | undefined;
   const workflowRuns = signalResults.find((result) => result.key === "workflow-runs")?.items as WorkflowRun[] | undefined;
+  const codeScanningAlerts = signalResults.find((result) => result.key === "code-scanning-alerts")?.items as CodeScanningAlert[] | undefined;
+  const openPullRequests = signalResults.find((result) => result.key === "pull-requests")?.items as PullRequest[] | undefined;
+  const openIssues = signalResults.find((result) => result.key === "issues")?.items as IssueRecord[] | undefined;
   const protection = signalResults.find((result) => result.key === "protection")?.data;
 
   for (const result of signalResults) {
@@ -493,6 +613,14 @@ async function mapRepositorySlice(
     vulnerabilitiesResolved = undefined;
     vulnerabilitiesTotal = dependabotOpen.length;
   }
+
+  const openIssuesOnly = (openIssues ?? []).filter((issue) => !issue.pull_request);
+  const openPullRequestsOnly = (openPullRequests ?? []).filter((pullRequest) => !pullRequest.draft);
+  const reviewQueueAgeDays = averageDaysSince(openPullRequestsOnly);
+  const staleIssueAgeDays = oldestDaysSince(openIssuesOnly);
+  const codeScanningAlertsOpen = protection && codeScanningAlerts ? codeScanningAlerts.length : undefined;
+  const dependabotAlertAgeDays = computeDependabotAlertAgeDays(dependabotOpen);
+  const workflowFailureRateValue = workflowFailureRate(workflowRuns ?? []);
 
   const openIssueCount = input.openIssuesCount;
   const pushRecencyDays = daysSince(input.pushedAt);
@@ -528,23 +656,30 @@ async function mapRepositorySlice(
       security: {
         openAlerts: dependabotOpen?.length,
         vulnerabilitiesResolved,
-        vulnerabilitiesTotal
+        vulnerabilitiesTotal,
+        codeScanningAlertsOpen
       },
       governance: {
         branchProtectionCoverage:
           typeof input.protected === "boolean"
             ? (input.protected ? 100 : 0)
             : undefined,
-        reviewComplianceRate
+        reviewComplianceRate,
+        pullRequestReviewQueueAgeDays: reviewQueueAgeDays
       },
       cicd: {
         ciSuccessRate: workflowStats.ciSuccessRate,
-        deploymentFrequencyWeekly: workflowStats.deploymentFrequencyWeekly
+        deploymentFrequencyWeekly: workflowStats.deploymentFrequencyWeekly,
+        workflowFailureRate: workflowFailureRateValue
       },
       quality: {
         testCoverage: workflowStats.testCoverage,
         dependencyFreshness,
-        issueHygiene
+        issueHygiene,
+        dependabotAlertAgeDays
+      },
+      repositoryHealth: {
+        staleIssueAgeDays: openIssuesOnly.length > 0 ? staleIssueAgeDays : undefined
       }
     },
     issues
@@ -572,7 +707,7 @@ export class LiveGitHubOrganizationAdapter implements GitHubOrganizationDataAdap
     const orgPath = `${config.apiBaseUrl}/orgs/${organizationSlug}`;
     const reposPath = `${config.apiBaseUrl}/orgs/${organizationSlug}/repos?type=all`;
 
-    let organization: GitHubOrganizationSlice;
+    let organization: GitHubOrganizationSlice | undefined = undefined;
     try {
       organization = await requestJson<GitHubOrganizationSlice>(orgPath, config);
     } catch (error) {
@@ -629,13 +764,19 @@ export class LiveGitHubOrganizationAdapter implements GitHubOrganizationDataAdap
       adapterIssues.push(...value.issues);
     }
 
-    return mapGitHubSignalsToNormalizedOrganization({
-      organization,
-      repositories: mappedRepos,
-      calculatedAt: new Date().toISOString()
-    }, {
-      adapterIssues,
-      fetchStatus: adapterIssues.length > 0 ? "partial" : "complete"
-    });
+    return mapGitHubSignalsToNormalizedOrganization(
+      {
+        organization: organization ?? {
+          login: request.organization,
+          name: request.organization
+        },
+        repositories: mappedRepos,
+        calculatedAt: new Date().toISOString()
+      },
+      {
+        adapterIssues,
+        fetchStatus: adapterIssues.length > 0 ? "partial" : "complete"
+      }
+    );
   }
 }

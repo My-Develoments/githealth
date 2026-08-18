@@ -64,7 +64,30 @@ describe("githubHealthScoreRoutes", () => {
     });
   });
 
+  it("returns 400 when org query is invalid", async () => {
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/health-score/github/organization?org=bad_org_slug`);
+      const body = await response.json() as { code: string };
+
+      expect(response.status).toBe(400);
+      expect(body.code).toBe("INVALID_REQUEST");
+    });
+  });
+
+  it("returns 400 when source query is invalid", async () => {
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/health-score/github/organization?org=githealth-labs&source=staging`);
+      const body = await response.json() as { code: string; message: string };
+
+      expect(response.status).toBe(400);
+      expect(body.code).toBe("INVALID_REQUEST");
+      expect(body.message).toBe("Invalid source query parameter.");
+    });
+  });
+
   it("returns DTO-only organization payload for mock source", async () => {
+    process.env.GITHUB_TOKEN = "test-token";
+
     await withServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/health-score/github/organization?org=githealth-labs&source=mock`);
       const body = await response.json() as {
@@ -75,6 +98,8 @@ describe("githubHealthScoreRoutes", () => {
 
       expect(response.status).toBe(200);
       expect(body.organization.categories[0]).not.toHaveProperty("contributions");
+      expect(JSON.stringify(body)).not.toContain("GITHUB_TOKEN");
+      expect(JSON.stringify(body)).not.toContain("test-token");
     });
   });
 

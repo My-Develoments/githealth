@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@githealth/ui": "workspace:*",
@@ -15,10 +16,13 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.1",
+    "happy-dom": "^20.11.2",
     "typescript": "^5.6.2",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "vitest": "^2.1.8"
   }
 }

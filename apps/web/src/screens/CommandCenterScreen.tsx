@@ -2,19 +2,23 @@ import { Badge, Button, Heading, Panel, Text } from "@githealth/ui";
 import { useEffect, useMemo, useState } from "react";
 import {
   achievements,
-  categorySignals,
+  categorySignals as categorySignalDefaults,
   commandCenterData,
   healthTrendKeyPoints,
   healthTrend30Day,
   healthTrendLabels,
-  insights,
+  insights as insightDefaults,
   navItems,
   pulseSeries,
-  recentEngineeringActivity,
+  recentEngineeringActivity as recentEngineeringActivityDefaults,
   repoConnections,
   repoNodes,
   scanStages
 } from "../mock/commandCenterData";
+import type {
+  CommandCenterActivityState,
+  CommandCenterHealthViewModel
+} from "../data/githubHealthViewMappers";
 import "./command-center.css";
 
 function impactTone(impact: "High" | "Medium" | "Low"): "critical" | "warning" | "neutral" {
@@ -108,14 +112,37 @@ function pulsePath(values: number[], width: number, height: number) {
 
 type CommandCenterScreenProps = {
   onExploreUniverse?: () => void;
+  healthData?: CommandCenterHealthViewModel;
+  activityState?: CommandCenterActivityState;
+  recentActivity?: typeof recentEngineeringActivityDefaults;
 };
 
-export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenProps) {
-  const { activity } = commandCenterData;
+export function CommandCenterScreen({ onExploreUniverse, healthData, activityState, recentActivity }: CommandCenterScreenProps) {
+  const resolvedHealth: CommandCenterHealthViewModel =
+    healthData ??
+    {
+      organization: commandCenterData.organization,
+      score: commandCenterData.score,
+      scoreStatus: commandCenterData.scoreStatus,
+      totalRepositories: commandCenterData.totalRepositories,
+      pulse: commandCenterData.pulse,
+      categorySignals: categorySignalDefaults,
+      insights: insightDefaults,
+      fetchStatus: "complete",
+      adapterIssues: []
+    };
+
+  const resolvedActivity: CommandCenterActivityState = activityState ?? {
+    isLoading: commandCenterData.activity.isLoading,
+    isEmpty: commandCenterData.activity.isEmpty,
+    hasError: commandCenterData.activity.hasError
+  };
+
+  const resolvedRecentActivity = recentActivity ?? recentEngineeringActivityDefaults;
   const reducedMotion = usePrefersReducedMotion();
 
-  const animatedScore = useAnimatedNumber(commandCenterData.score, 1180, reducedMotion, 260);
-  const animatedRepositories = useAnimatedNumber(commandCenterData.totalRepositories, 960, reducedMotion, 760);
+  const animatedScore = useAnimatedNumber(resolvedHealth.score, 1180, reducedMotion, 260);
+  const animatedRepositories = useAnimatedNumber(resolvedHealth.totalRepositories, 960, reducedMotion, 760);
 
   const [activeNodeId, setActiveNodeId] = useState<string>("api-gateway");
   const [isScanning, setIsScanning] = useState(false);
@@ -125,7 +152,7 @@ export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenPr
   const [activeTrendIndex, setActiveTrendIndex] = useState(healthTrend30Day.length - 1);
 
   const activeNode = repoNodes.find((node) => node.id === activeNodeId);
-  const activeNodeLabel = activeNodeId === "org-core" ? commandCenterData.organization : activeNode?.label ?? repoNodes[0].label;
+  const activeNodeLabel = activeNodeId === "org-core" ? resolvedHealth.organization : activeNode?.label ?? repoNodes[0].label;
   const activeNodeGroup = activeNodeId === "org-core" ? "organization" : activeNode?.group ?? repoNodes[0].group;
   const activeNodeTone = activeNode?.tone ?? "neutral";
 
@@ -248,7 +275,7 @@ export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenPr
               Engineering Intelligence Center
             </Heading>
             <Text tone="secondary">
-              Real-time health monitoring for {commandCenterData.organization}.
+              Real-time health monitoring for {resolvedHealth.organization}.
             </Text>
           </div>
 
@@ -287,14 +314,14 @@ export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenPr
               <Heading as="h3" size="sm">
                 Organization Health Score
               </Heading>
-              <Badge tone="healthy">{commandCenterData.scoreStatus}</Badge>
+              <Badge tone="healthy">{resolvedHealth.scoreStatus}</Badge>
             </div>
 
             <div className="cc-score-orb" aria-label={`Health score ${animatedScore}`}>
               <div className="cc-score-ring" style={{ ["--score" as string]: String(animatedScore) }}>
                 <div className="cc-score-core">
                   <span className="cc-score-value">{animatedScore}</span>
-                  <span className="cc-score-label">{commandCenterData.scoreStatus}</span>
+                  <span className="cc-score-label">{resolvedHealth.scoreStatus}</span>
                 </div>
               </div>
             </div>
@@ -309,7 +336,7 @@ export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenPr
             </div>
 
             <div className="cc-score-contrib" aria-label="Score contributors">
-              {categorySignals.map((signal) => (
+              {resolvedHealth.categorySignals.map((signal) => (
                 <div key={signal.key} className="cc-score-contrib-item">
                   <span>{signal.label}</span>
                   <strong>{signal.score}</strong>
@@ -332,13 +359,13 @@ export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenPr
                 </Heading>
               </li>
               <li>
-                <Badge tone="healthy">{commandCenterData.pulse.healthy} Healthy</Badge>
-                <Badge tone="warning">{commandCenterData.pulse.warning} Needs attention</Badge>
-                <Badge tone="critical">{commandCenterData.pulse.critical} Critical</Badge>
+                <Badge tone="healthy">{resolvedHealth.pulse.healthy} Healthy</Badge>
+                <Badge tone="warning">{resolvedHealth.pulse.warning} Needs attention</Badge>
+                <Badge tone="critical">{resolvedHealth.pulse.critical} Critical</Badge>
               </li>
               <li>
                 <Text size="sm" tone="secondary">
-                  Last scan: {commandCenterData.pulse.lastScan}
+                  Last scan: {resolvedHealth.pulse.lastScan}
                 </Text>
               </li>
             </ul>
@@ -350,14 +377,14 @@ export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenPr
           </Panel>
 
           <div className="cc-signals cc-reveal cc-reveal--signals" aria-label="Category health signals">
-            {categorySignals.map((signal, index) => (
+            {resolvedHealth.categorySignals.map((signal, index) => (
               <Panel key={signal.key} tone="subtle" className="cc-signal-card" style={{ animationDelay: `${index * 90 + 250}ms` }}>
                 <Text size="sm" tone="muted">
                   {signal.label}
                 </Text>
                 <div className="cc-signal-main">
                   <Heading as="h3" size="xl">
-                    {Math.round((animatedScore / commandCenterData.score) * signal.score)}
+                    {Math.round((animatedScore / Math.max(resolvedHealth.score, 1)) * signal.score)}
                   </Heading>
                   <Badge tone={signal.tone}>{signal.tone}</Badge>
                 </div>
@@ -377,7 +404,7 @@ export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenPr
                 Repository Universe Preview
               </Heading>
               <Text size="sm" tone="muted">
-                {commandCenterData.totalRepositories} repositories
+                {resolvedHealth.totalRepositories} repositories
               </Text>
             </div>
 
@@ -462,12 +489,12 @@ export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenPr
                   Health Intelligence
                 </Heading>
                 <Text size="sm" tone="muted">
-                  {insights.length} recommendations
+                  {resolvedHealth.insights.length} recommendations
                 </Text>
               </div>
 
               <ol className="cc-insights-list">
-                {insights.map((insight, index) => (
+                {resolvedHealth.insights.map((insight, index) => (
                   <li key={insight.id}>
                     <span className="cc-insight-index">{String(index + 1).padStart(2, "0")}</span>
                     <div>
@@ -560,7 +587,7 @@ export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenPr
                 Recent Engineering Activity
               </Heading>
               <ul>
-                {recentEngineeringActivity.map((item) => (
+                {resolvedRecentActivity.map((item) => (
                   <li key={item.id}>
                     <span className={`cc-activity-dot cc-activity-dot--${item.tone}`} aria-hidden="true" />
                     <div>
@@ -618,7 +645,7 @@ export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenPr
             <Heading as="h3" size="sm">
               Data Loading
             </Heading>
-            {activity.isLoading ? (
+            {resolvedActivity.isLoading ? (
               <div className="cc-skeleton" aria-hidden="true">
                 <span />
                 <span />
@@ -626,7 +653,7 @@ export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenPr
               </div>
             ) : (
               <Text size="sm" tone="muted">
-                No active loading jobs.
+                {resolvedActivity.isEmpty ? "No repository data available yet." : "No active loading jobs."}
               </Text>
             )}
           </Panel>
@@ -635,7 +662,7 @@ export function CommandCenterScreen({ onExploreUniverse }: CommandCenterScreenPr
             <Heading as="h3" size="sm">
               Error Recovery
             </Heading>
-            {activity.hasError ? (
+            {resolvedActivity.hasError ? (
               <>
                 <Text size="sm" tone="secondary">
                   Dependency audit temporarily unavailable. Last run failed at repository index stage.

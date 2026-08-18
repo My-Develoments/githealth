@@ -1,0 +1,1011 @@
+.ru-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 560px at 70% -5%, rgba(58, 123, 255, 0.22), transparent 62%),
+    radial-gradient(900px 480px at 15% 0%, rgba(139, 92, 246, 0.2), transparent 64%),
+    linear-gradient(180deg, #040913 0%, #050b17 42%, #050b17 100%);
+  color: var(--gh-color-text-primary);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.ru-stage {
+  opacity: 0;
+  transform: translateY(14px);
+  animation: ru-stage-rise 700ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.ru-stage-shell {
+  animation-delay: 70ms;
+}
+
+.ru-stage-nav {
+  animation-delay: 150ms;
+}
+
+.ru-stage-layout {
+  animation-delay: 240ms;
+}
+
+.ru-stage-side {
+  animation-delay: 980ms;
+}
+
+.ru-stage-universe {
+  animation-delay: 130ms;
+}
+
+.ru-stage-signal {
+  animation: ru-legend-in 720ms cubic-bezier(0.2, 0.75, 0.18, 1) both;
+  animation-delay: 840ms;
+}
+
+.ru-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  border: 1px solid rgba(234, 243, 255, 0.14);
+  border-radius: 20px;
+  padding: 12px;
+  background: linear-gradient(180deg, rgba(9, 14, 24, 0.92), rgba(8, 12, 21, 0.85));
+  box-shadow: 0 14px 36px rgba(2, 8, 18, 0.38);
+}
+
+.ru-header-title {
+  display: grid;
+  gap: 6px;
+}
+
+.ru-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ru-filter-bar {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1.3fr 1fr minmax(220px, 320px);
+  align-items: center;
+}
+
+.ru-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ru-search {
+  display: grid;
+  gap: 6px;
+}
+
+.ru-search-label {
+  font-family: var(--gh-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--gh-color-text-muted);
+  text-transform: uppercase;
+}
+
+.ru-search input {
+  min-height: 40px;
+  border-radius: var(--gh-radius-md);
+  border: var(--gh-border-subtle);
+  background: rgba(11, 18, 32, 0.86);
+  color: var(--gh-color-text-primary);
+  padding: 0 12px;
+  font-family: var(--gh-font-sans);
+}
+
+.ru-search input:focus-visible {
+  outline: none;
+  box-shadow: var(--gh-shadow-focus);
+}
+
+.ru-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: 12px;
+}
+
+.ru-layout-main,
+.ru-layout-side {
+  min-width: 0;
+}
+
+.ru-layout-side {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.ru-universe-panel {
+  display: grid;
+  gap: 10px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(77, 215, 255, 0.13), transparent 50%),
+    radial-gradient(circle at 84% 20%, rgba(52, 211, 153, 0.1), transparent 48%),
+    linear-gradient(170deg, rgba(8, 12, 22, 0.96), rgba(7, 12, 23, 0.86));
+}
+
+.ru-universe-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.ru-universe-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ru-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ru-universe-canvas {
+  position: relative;
+  border-radius: 16px;
+  border: 1px solid rgba(234, 243, 255, 0.12);
+  background:
+    radial-gradient(closest-side at 50% 50%, rgba(58, 123, 255, 0.18), transparent 68%),
+    radial-gradient(circle at 18% 20%, rgba(52, 211, 153, 0.16), transparent 48%),
+    radial-gradient(circle at 82% 22%, rgba(248, 113, 113, 0.12), transparent 48%),
+    radial-gradient(circle at 80% 72%, rgba(251, 191, 36, 0.14), transparent 46%),
+    rgba(7, 13, 24, 0.96);
+  min-height: 620px;
+  overflow: hidden;
+  cursor: grab;
+}
+
+.ru-universe-canvas::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(77, 215, 255, 0.09), transparent 55%),
+    linear-gradient(120deg, rgba(255, 255, 255, 0.02), transparent 35%);
+  pointer-events: none;
+}
+
+.ru-universe-canvas--panning {
+  cursor: grabbing;
+}
+
+.ru-universe-canvas svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.ru-orbits {
+  transform-origin: center;
+  animation: ru-orbit-rotate 42s linear infinite;
+}
+
+.ru-orbit-ring {
+  fill: none;
+  stroke: rgba(77, 215, 255, 0.16);
+  stroke-width: 1;
+}
+
+.ru-cluster-layer {
+  pointer-events: none;
+}
+
+.ru-enter-clusters {
+  animation: ru-fade-in-soft 720ms ease-out both;
+  animation-delay: 460ms;
+}
+
+.ru-cluster-link {
+  fill: none;
+  stroke-width: 1;
+  stroke-dasharray: 6 10;
+  opacity: 0;
+  animation: ru-cluster-link-in 700ms ease-out forwards;
+}
+
+.ru-cluster-link--app-service {
+  stroke: rgba(90, 183, 255, 0.24);
+  animation-delay: 520ms;
+}
+
+.ru-cluster-link--service-platform {
+  stroke: rgba(67, 245, 171, 0.22);
+  animation-delay: 620ms;
+}
+
+.ru-cluster-link--platform-app {
+  stroke: rgba(150, 156, 255, 0.22);
+  animation-delay: 700ms;
+}
+
+.ru-cluster-label {
+  fill: rgba(210, 226, 255, 0.74);
+  font-family: var(--gh-font-mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-anchor: middle;
+  text-transform: uppercase;
+  opacity: 0;
+  animation: ru-fade-in-soft 700ms ease-out forwards;
+}
+
+.ru-cluster-label--app {
+  animation-delay: 700ms;
+}
+
+.ru-cluster-label--service {
+  animation-delay: 760ms;
+}
+
+.ru-cluster-label--platform {
+  animation-delay: 820ms;
+}
+
+.ru-cluster {
+  fill: none;
+  stroke-width: 1;
+  opacity: 0;
+  animation: ru-fade-cluster 820ms ease-out forwards;
+}
+
+.ru-cluster--app {
+  stroke: rgba(90, 183, 255, 0.3);
+  animation-delay: 260ms;
+}
+
+.ru-cluster--service {
+  stroke: rgba(67, 245, 171, 0.28);
+  animation-delay: 320ms;
+}
+
+.ru-cluster--platform {
+  stroke: rgba(150, 156, 255, 0.26);
+  animation-delay: 380ms;
+}
+
+.ru-enter-rings {
+  animation: ru-fade-in-soft 700ms ease-out both;
+  animation-delay: 360ms;
+}
+
+.ru-enter-connections {
+  animation: ru-fade-in-soft 760ms ease-out both;
+  animation-delay: 640ms;
+}
+
+.ru-connection {
+  stroke: url(#ruConnectionGradient);
+  stroke-linecap: round;
+  stroke-dasharray: 3 5;
+  animation: ru-flow 5s linear infinite;
+  transition: opacity 220ms ease, stroke-width 220ms ease, filter 220ms ease;
+}
+
+.ru-connection--high {
+  stroke-width: 1.8;
+}
+
+.ru-connection--medium {
+  stroke-width: 1.3;
+}
+
+.ru-connection--low {
+  stroke-width: 1;
+}
+
+.ru-connection--dim {
+  opacity: 0.14;
+}
+
+.ru-connection--active {
+  stroke-width: 2.5;
+  opacity: 0.96;
+  filter: drop-shadow(0 0 10px rgba(88, 186, 255, 0.44));
+}
+
+.ru-connection--active-signal {
+  animation: ru-flow 3.3s linear infinite, ru-flow-active 2s ease-in-out infinite;
+}
+
+.ru-enter-core {
+  opacity: 0;
+  transform-origin: center;
+  animation: ru-core-reveal 640ms cubic-bezier(0.2, 0.82, 0.18, 1) forwards;
+  animation-delay: 170ms;
+}
+
+.ru-org-energy {
+  fill: none;
+  stroke: rgba(77, 215, 255, 0.36);
+  stroke-width: 1.5;
+  stroke-dasharray: 10 12;
+  animation: ru-energy-pulse 2.8s ease-in-out infinite;
+}
+
+.ru-org-glow {
+  fill: rgba(139, 92, 246, 0.2);
+}
+
+.ru-org-glow--inner {
+  fill: rgba(77, 215, 255, 0.14);
+}
+
+.ru-org-core {
+  fill: url(#ruCoreGlow);
+  stroke: rgba(77, 215, 255, 0.6);
+  stroke-width: 1.8;
+  filter: drop-shadow(0 0 20px rgba(77, 215, 255, 0.45));
+}
+
+.ru-org-score {
+  fill: var(--gh-color-text-primary);
+  font-family: var(--gh-font-sans);
+  font-size: 19px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.ru-org-label {
+  fill: rgba(234, 243, 255, 0.9);
+  font-family: var(--gh-font-mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-anchor: middle;
+  text-transform: uppercase;
+}
+
+.ru-repository {
+  cursor: pointer;
+  transition: opacity 180ms ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.ru-enter-node {
+  opacity: 0;
+  animation: ru-node-reveal 620ms cubic-bezier(0.2, 0.78, 0.2, 1) forwards;
+}
+
+.ru-repository--dim {
+  opacity: 0.32;
+}
+
+.ru-repository--search-dim {
+  opacity: 0.22;
+}
+
+.ru-repository--related {
+  opacity: 0.96;
+}
+
+.ru-repository--unrelated {
+  opacity: 0.16;
+}
+
+.ru-repository--unrelated .ru-repository-pulse {
+  opacity: 0.05;
+}
+
+.ru-repository--important .ru-repository-label {
+  letter-spacing: 0.08em;
+}
+
+.ru-repository-pulse {
+  fill: currentColor;
+  opacity: 0.15;
+  animation: ru-pulse 2.9s ease-in-out infinite;
+}
+
+.ru-repository-pulse--static {
+  animation: none;
+}
+
+.ru-repository-node {
+  fill: currentColor;
+  stroke: rgba(234, 243, 255, 0.7);
+  stroke-width: 1;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, currentColor 55%, transparent));
+  transition: stroke-width 200ms ease, filter 200ms ease;
+}
+
+.ru-repository-focus-ring {
+  fill: none;
+  stroke: color-mix(in srgb, currentColor 72%, #ffffff 28%);
+  stroke-width: 1.15;
+  stroke-dasharray: 7 8;
+  opacity: 0.96;
+  animation: ru-focus-spin 9s linear infinite;
+}
+
+.ru-repository--hovered .ru-repository-node,
+.ru-repository--selected .ru-repository-node {
+  stroke-width: 1.5;
+  stroke: rgba(234, 243, 255, 1);
+  filter: drop-shadow(0 0 20px color-mix(in srgb, currentColor 66%, transparent));
+}
+
+.ru-repository--selected .ru-repository-node {
+  stroke-width: 2.1;
+  filter: drop-shadow(0 0 27px color-mix(in srgb, currentColor 76%, transparent));
+}
+
+.ru-repository--selected .ru-repository-pulse {
+  opacity: 0.26;
+  animation-duration: 2.2s;
+}
+
+.ru-repository-label {
+  fill: rgba(234, 243, 255, 0.9);
+  font-size: 10px;
+  font-family: var(--gh-font-mono);
+  text-anchor: middle;
+  letter-spacing: 0.07em;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: rgba(4, 10, 20, 0.82);
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  transition: opacity 180ms ease, fill 180ms ease;
+}
+
+.ru-repository-label--selected {
+  fill: rgba(255, 255, 255, 0.98);
+}
+
+.ru-repository-label--related {
+  fill: rgba(231, 243, 255, 0.96);
+}
+
+.ru-repository-label--muted {
+  opacity: 0.4;
+}
+
+.ru-repository-label--support {
+  opacity: 0.72;
+}
+
+.ru-tone-healthy {
+  color: var(--gh-color-status-healthy);
+}
+
+.ru-tone-warning {
+  color: var(--gh-color-status-warning);
+}
+
+.ru-tone-critical {
+  color: var(--gh-color-status-critical);
+}
+
+.ru-tone-muted {
+  color: var(--gh-color-status-unknown);
+}
+
+.ru-hover-card {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: grid;
+  gap: 2px;
+  border-radius: 10px;
+  border: 1px solid rgba(234, 243, 255, 0.2);
+  background: rgba(8, 13, 24, 0.86);
+  padding: 8px 10px;
+  backdrop-filter: blur(3px);
+}
+
+.ru-hover-card span {
+  font-size: 12px;
+  color: var(--gh-color-text-muted);
+}
+
+.ru-details-panel {
+  display: grid;
+  gap: 10px;
+  transition: transform 260ms ease, box-shadow 260ms ease, border-color 260ms ease;
+}
+
+.ru-details-panel--active {
+  animation: ru-panel-focus-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  border-color: color-mix(in srgb, rgba(234, 243, 255, 0.14) 70%, rgba(77, 215, 255, 0.4));
+  box-shadow: 0 14px 34px rgba(4, 11, 24, 0.35);
+}
+
+.ru-details-panel--placeholder {
+  min-height: 240px;
+  align-content: start;
+}
+
+.ru-details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 8px;
+}
+
+.ru-details-score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  border-bottom: 1px solid rgba(234, 243, 255, 0.12);
+  padding-bottom: 10px;
+}
+
+.ru-details-score-value span {
+  display: block;
+  font-family: var(--gh-font-sans);
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ru-details-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ru-details-operational {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+  border: 1px solid rgba(234, 243, 255, 0.1);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(10, 16, 28, 0.68);
+}
+
+.ru-details-trend {
+  border: 1px solid rgba(234, 243, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(8, 13, 24, 0.72);
+  padding: 8px;
+}
+
+.ru-details-trend svg {
+  width: 100%;
+  height: 72px;
+}
+
+.ru-details-trend-area {
+  fill: rgba(77, 215, 255, 0.12);
+}
+
+.ru-details-trend-line {
+  fill: none;
+  stroke: rgba(77, 215, 255, 0.95);
+  stroke-width: 2;
+  stroke-dasharray: 230;
+  stroke-dashoffset: 230;
+  animation: ru-line-draw 920ms ease-out forwards;
+}
+
+.ru-details-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ru-details-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.ru-details-list li {
+  border-left: 2px solid rgba(77, 215, 255, 0.3);
+  padding-left: 8px;
+}
+
+.ru-intelligence-column {
+  display: grid;
+  gap: 10px;
+}
+
+.ru-insight-panel,
+.ru-risk-panel,
+.ru-activity-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.ru-insight-list,
+.ru-risk-list,
+.ru-activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.ru-insight-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid rgba(234, 243, 255, 0.1);
+  padding-bottom: 8px;
+}
+
+.ru-risk-list li {
+  display: grid;
+  gap: 6px;
+}
+
+.ru-risk-score-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.ru-risk-bar {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(248, 113, 113, 0.8), rgba(77, 215, 255, 0.8));
+}
+
+.ru-activity-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  border-bottom: 1px solid rgba(234, 243, 255, 0.1);
+  padding-bottom: 8px;
+}
+
+.ru-activity-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-top: 6px;
+}
+
+.ru-activity-dot--healthy {
+  background: var(--gh-color-status-healthy);
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.45);
+}
+
+.ru-activity-dot--warning {
+  background: var(--gh-color-status-warning);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.45);
+}
+
+.ru-activity-dot--critical {
+  background: var(--gh-color-status-critical);
+  box-shadow: 0 0 8px rgba(248, 113, 113, 0.45);
+}
+
+.ru-activity-dot--unknown {
+  background: var(--gh-color-status-unknown);
+}
+
+.ru-state-shell {
+  min-height: 62vh;
+  display: grid;
+  place-items: center;
+}
+
+.ru-loading-panel,
+.ru-error-panel,
+.ru-empty-panel {
+  width: min(780px, 100%);
+  display: grid;
+  gap: 10px;
+}
+
+.ru-loading-orbit {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  position: relative;
+}
+
+.ru-loading-orbit span {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(77, 215, 255, 0.32);
+  animation: ru-pulse 2.5s ease-in-out infinite;
+}
+
+.ru-loading-orbit span:nth-child(1) {
+  width: 72px;
+  height: 72px;
+}
+
+.ru-loading-orbit span:nth-child(2) {
+  width: 116px;
+  height: 116px;
+  animation-delay: 300ms;
+}
+
+.ru-loading-orbit span:nth-child(3) {
+  width: 160px;
+  height: 160px;
+  animation-delay: 620ms;
+}
+
+.ru-error-actions,
+.ru-empty-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@keyframes ru-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.95;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes ru-orbit-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes ru-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+
+@keyframes ru-flow-active {
+  0%,
+  100% {
+    stroke-opacity: 0.88;
+  }
+
+  50% {
+    stroke-opacity: 1;
+  }
+}
+
+@keyframes ru-line-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes ru-stage-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ru-legend-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ru-fade-in-soft {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes ru-fade-cluster {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 0.52;
+  }
+}
+
+@keyframes ru-cluster-link-in {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 0.64;
+  }
+}
+
+@keyframes ru-core-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ru-energy-pulse {
+  0%,
+  100% {
+    opacity: 0.38;
+    stroke-dashoffset: 0;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.95;
+    stroke-dashoffset: -34;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes ru-node-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ru-focus-spin {
+  0% {
+    stroke-dashoffset: 0;
+  }
+
+  100% {
+    stroke-dashoffset: -120;
+  }
+}
+
+@keyframes ru-panel-focus-in {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.992);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 1240px) {
+  .ru-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .ru-filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .ru-layout-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ru-details-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 880px) {
+  .ru-header {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .ru-layout-side {
+    grid-template-columns: 1fr;
+  }
+
+  .ru-universe-canvas {
+    min-height: 500px;
+  }
+
+  .ru-repository-label {
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    stroke-width: 1.7px;
+  }
+
+  .ru-details-columns,
+  .ru-details-operational,
+  .ru-details-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .ru-shell {
+    padding: 10px;
+  }
+
+  .ru-universe-canvas {
+    min-height: 420px;
+  }
+
+  .ru-repository-label {
+    font-size: 9px;
+  }
+
+  .ru-activity-list li,
+  .ru-insight-list li {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ru-stage,
+  .ru-stage-signal,
+  .ru-enter-rings,
+  .ru-enter-connections,
+  .ru-enter-core,
+  .ru-enter-clusters,
+  .ru-enter-node,
+  .ru-cluster,
+  .ru-cluster-link,
+  .ru-cluster-label,
+  .ru-org-energy,
+  .ru-details-panel--active {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+
+  .ru-orbits,
+  .ru-connection,
+  .ru-repository-pulse,
+  .ru-details-trend-line,
+  .ru-loading-orbit span {
+    animation: none;
+  }
+
+  .ru-repository-focus-ring {
+    animation: none;
+  }
+}

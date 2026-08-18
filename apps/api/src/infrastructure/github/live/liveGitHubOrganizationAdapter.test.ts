@@ -503,4 +503,32 @@ describe("LiveGitHubOrganizationAdapter", () => {
       code: "RATE_LIMITED"
     });
   });
+
+  it("URL-encodes organization slug in upstream paths", async () => {
+    process.env.GITHUB_TOKEN = "test-token";
+    process.env.GITHUB_MAX_RETRIES = "0";
+
+    const seenUrls: string[] = [];
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      seenUrls.push(url);
+
+      return jsonResponse({ message: "Not found" }, 404);
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new LiveGitHubOrganizationAdapter();
+    await expect(adapter.fetchOrganizationData({ organization: "org/with/slash", source: "live" })).rejects.toMatchObject({
+      code: "NOT_FOUND"
+    });
+
+    expect(seenUrls[0]).toContain("/orgs/org%2Fwith%2Fslash");
+  });
 });

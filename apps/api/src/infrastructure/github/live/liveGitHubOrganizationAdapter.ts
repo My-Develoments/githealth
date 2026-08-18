@@ -568,8 +568,9 @@ export class LiveGitHubOrganizationAdapter implements GitHubOrganizationDataAdap
       throw new GitHubAdapterError("AUTH_MISSING", "GITHUB_TOKEN is required for live GitHub source.", 401);
     }
 
-    const orgPath = `${config.apiBaseUrl}/orgs/${request.organization}`;
-    const reposPath = `${config.apiBaseUrl}/orgs/${request.organization}/repos?type=all`;
+    const organizationSlug = safeName(request.organization);
+    const orgPath = `${config.apiBaseUrl}/orgs/${organizationSlug}`;
+    const reposPath = `${config.apiBaseUrl}/orgs/${organizationSlug}/repos?type=all`;
 
     let organization: GitHubOrganizationSlice;
     try {

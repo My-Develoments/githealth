@@ -36,7 +36,7 @@ export type GitHubRepositoryScoreResponse = {
   adapterIssues: GitHubAdapterIssue[];
 };
 
-function resolveSource(input?: string): GitHubSource {
+function resolveSource(input?: GitHubSource): GitHubSource {
   return input === "live" ? "live" : "mock";
 }
 
@@ -48,7 +48,7 @@ function resolveAdapter(source: GitHubSource) {
 
 async function computeGitHubScores(
   organization: string,
-  sourceInput?: string,
+  sourceInput?: GitHubSource,
   repository?: string
 ): Promise<{
   source: GitHubSource;
@@ -84,7 +84,7 @@ async function computeGitHubScores(
 
 export async function getGitHubOrganizationScore(
   organization: string,
-  sourceInput?: string
+  sourceInput?: GitHubSource
 ): Promise<GitHubOrganizationScoreResponse> {
   const result = await computeGitHubScores(organization, sourceInput);
   return {
@@ -97,7 +97,7 @@ export async function getGitHubOrganizationScore(
 
 export async function getGitHubRepositoryScores(
   organization: string,
-  sourceInput?: string
+  sourceInput?: GitHubSource
 ): Promise<GitHubRepositoryScoresResponse> {
   const result = await computeGitHubScores(organization, sourceInput);
   return {
@@ -111,7 +111,7 @@ export async function getGitHubRepositoryScores(
 export async function getGitHubRepositoryScoreById(
   organization: string,
   repositoryId: string,
-  sourceInput?: string
+  sourceInput?: GitHubSource
 ): Promise<GitHubRepositoryScoreResponse> {
   const result = await computeGitHubScores(organization, sourceInput, repositoryId);
   return {

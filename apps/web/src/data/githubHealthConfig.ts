@@ -2,6 +2,7 @@ import type { GitHubHealthConfig, GitHubSource } from "./githubHealthContracts";
 
 const DEFAULT_ORGANIZATION = "githealth-labs";
 const DEFAULT_SOURCE: GitHubSource = "mock";
+const GITHUB_ORG_SLUG_PATTERN = /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i;
 
 export function resolveGitHubHealthConfig(): GitHubHealthConfig {
   const apiBaseUrl = sanitizeBaseUrl(import.meta.env.VITE_API_BASE_URL);
@@ -32,6 +33,10 @@ function sanitizeOrganization(value: string | undefined): string {
     return DEFAULT_ORGANIZATION;
   }
 
+  if (!GITHUB_ORG_SLUG_PATTERN.test(trimmed)) {
+    return DEFAULT_ORGANIZATION;
+  }
+
   return trimmed;
 }
 
@@ -41,3 +46,9 @@ function sanitizeSource(value: string | undefined): GitHubSource {
   }
   return DEFAULT_SOURCE;
 }
+
+export const __testables = {
+  sanitizeBaseUrl,
+  sanitizeOrganization,
+  sanitizeSource
+};

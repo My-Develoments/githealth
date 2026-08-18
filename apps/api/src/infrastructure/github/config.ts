@@ -12,6 +12,24 @@ export type GitHubConfig = {
 };
 
 export function getGitHubConfig(): GitHubConfig {
+  const rawToken = process.env.GITHUB_TOKEN;
+  const token = typeof rawToken === "string" && rawToken.trim().length > 0
+    ? rawToken.trim()
+    : undefined;
+
+  const rawApiBaseUrl = process.env.GITHUB_API_BASE_URL ?? "https://api.github.com";
+  let apiBaseUrl: string;
+
+  try {
+    const parsed = new URL(rawApiBaseUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      throw new Error("Unsupported protocol");
+    }
+    apiBaseUrl = parsed.toString().replace(/\/$/, "");
+  } catch {
+    throw new GitHubAdapterError("INVALID_RESPONSE", "Invalid GITHUB_API_BASE_URL value.", 500);
+  }
+
   const timeoutMs = Number(process.env.GITHUB_REQUEST_TIMEOUT_MS ?? 8000);
   const maxRetries = Number(process.env.GITHUB_MAX_RETRIES ?? 2);
   const retryBaseDelayMs = Number(process.env.GITHUB_RETRY_BASE_DELAY_MS ?? 100);
@@ -44,8 +62,8 @@ export function getGitHubConfig(): GitHubConfig {
   }
 
   return {
-    token: process.env.GITHUB_TOKEN,
-    apiBaseUrl: process.env.GITHUB_API_BASE_URL ?? "https://api.github.com",
+    token,
+    apiBaseUrl,
     timeoutMs,
     maxRetries,
     retryBaseDelayMs,

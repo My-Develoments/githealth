@@ -2,6 +2,7 @@ import express from "express";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getGitHubOrganizationScore, resetGitHubScoreCache } from "../application/githubScoringService.js";
 import { LiveGitHubOrganizationAdapter } from "../infrastructure/github/live/liveGitHubOrganizationAdapter.js";
+import { resetStartupValidationStatusForTests, validateStartupConfiguration } from "../infrastructure/runtime/startupValidation.js";
 import { opsRoutes } from "./opsRoutes.js";
 import { attachRequestContext } from "./requestContext.js";
 
@@ -50,13 +51,24 @@ describe("opsRoutes", () => {
   const previousToken = process.env.GITHUB_TOKEN;
   const previousMaxRetries = process.env.GITHUB_MAX_RETRIES;
   const previousCacheTtlMs = process.env.GITHUB_SCORE_CACHE_TTL_MS;
+  const previousApiAuthToken = process.env.API_AUTH_TOKEN;
+  const previousAllowedGitHubOrgs = process.env.ALLOWED_GITHUB_ORGS;
+  const previousWindowMs = process.env.GITHUB_ENDPOINT_RATE_LIMIT_WINDOW_MS;
+  const previousMaxRequests = process.env.GITHUB_ENDPOINT_RATE_LIMIT_MAX_REQUESTS;
+  const previousApiBaseUrl = process.env.GITHUB_API_BASE_URL;
 
   afterEach(() => {
     vi.restoreAllMocks();
     resetGitHubScoreCache();
+    resetStartupValidationStatusForTests();
     restoreEnv("GITHUB_TOKEN", previousToken);
     restoreEnv("GITHUB_MAX_RETRIES", previousMaxRetries);
     restoreEnv("GITHUB_SCORE_CACHE_TTL_MS", previousCacheTtlMs);
+    restoreEnv("API_AUTH_TOKEN", previousApiAuthToken);
+    restoreEnv("ALLOWED_GITHUB_ORGS", previousAllowedGitHubOrgs);
+    restoreEnv("GITHUB_ENDPOINT_RATE_LIMIT_WINDOW_MS", previousWindowMs);
+    restoreEnv("GITHUB_ENDPOINT_RATE_LIMIT_MAX_REQUESTS", previousMaxRequests);
+    restoreEnv("GITHUB_API_BASE_URL", previousApiBaseUrl);
   });
 
   it("returns deterministic liveness payload", async () => {
@@ -70,7 +82,30 @@ describe("opsRoutes", () => {
     });
   });
 
-  it("returns readiness payload with service metadata", async () => {
+  it("returns degraded readiness before startup validation has completed", async () => {
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/ready`);
+      const body = await response.json() as {
+        status: string;
+        checks: { configuration: string };
+      };
+
+      expect(response.status).toBe(503);
+      expect(body.status).toBe("degraded");
+      expect(body.checks.configuration).toBe("pending");
+      expect(response.headers.get("x-request-id")).toBeTruthy();
+    });
+  });
+
+  it("returns readiness payload with service metadata after startup validation", async () => {
+    process.env.API_AUTH_TOKEN = "issue23-token";
+    process.env.ALLOWED_GITHUB_ORGS = "githealth-labs";
+    process.env.GITHUB_ENDPOINT_RATE_LIMIT_WINDOW_MS = "60000";
+    process.env.GITHUB_ENDPOINT_RATE_LIMIT_MAX_REQUESTS = "60";
+    process.env.GITHUB_SCORE_CACHE_TTL_MS = "30000";
+    process.env.GITHUB_API_BASE_URL = "https://api.github.com";
+    validateStartupConfiguration();
+
     await withServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/ready`);
       const body = await response.json() as {
@@ -108,6 +143,12 @@ describe("opsRoutes", () => {
 
     await getGitHubOrganizationScore("cache-org", "live");
     await getGitHubOrganizationScore("cache-org", "live");
+    process.env.API_AUTH_TOKEN = "issue23-token";
+    process.env.ALLOWED_GITHUB_ORGS = "githealth-labs";
+    process.env.GITHUB_ENDPOINT_RATE_LIMIT_WINDOW_MS = "60000";
+    process.env.GITHUB_ENDPOINT_RATE_LIMIT_MAX_REQUESTS = "60";
+    process.env.GITHUB_API_BASE_URL = "https://api.github.com";
+    validateStartupConfiguration();
 
     await withServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/ready`);

@@ -21,20 +21,10 @@ export type RequestJsonOptions = {
 };
 
 function buildRequestHeaders(extraHeaders?: Record<string, string>): HeadersInit {
-  const headers: HeadersInit = {
+  return {
     Accept: "application/json",
     ...(extraHeaders ?? {})
   };
-
-  const token = import.meta.env.VITE_API_AUTH_TOKEN;
-  if (typeof token === "string" && token.trim().length > 0) {
-    return {
-      ...headers,
-      Authorization: `Bearer ${token.trim()}`
-    };
-  }
-
-  return headers;
 }
 
 export async function requestJson<T>(url: string, options: RequestJsonOptions = {}): Promise<T> {

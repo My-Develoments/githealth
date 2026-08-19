@@ -4,6 +4,10 @@ const ALLOWED_DEV_ORIGINS = new Set(["http://localhost:5173", "http://localhost:
 const ALLOWED_METHODS = "GET, OPTIONS";
 const ALLOWED_HEADERS = "Accept, Authorization, x-github-app-session";
 
+export function isLocalDevelopmentCorsEnabled(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
 function applyCorsHeaders(res: Response, origin: string): void {
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Methods", ALLOWED_METHODS);
@@ -12,6 +16,11 @@ function applyCorsHeaders(res: Response, origin: string): void {
 }
 
 export function localDevelopmentCors(req: Request, res: Response, next: NextFunction): void {
+  if (!isLocalDevelopmentCorsEnabled()) {
+    next();
+    return;
+  }
+
   const origin = req.header("Origin");
   if (typeof origin !== "string" || !ALLOWED_DEV_ORIGINS.has(origin)) {
     next();

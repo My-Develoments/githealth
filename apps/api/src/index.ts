@@ -3,12 +3,12 @@ import { githubConnectionRoutes } from "./http/githubConnectionRoutes.js";
 import { githubHealthScoreRoutes } from "./http/githubHealthScoreRoutes.js";
 import { healthScoreRoutes } from "./http/healthScoreRoutes.js";
 import { opsRoutes } from "./http/opsRoutes.js";
-import { localDevelopmentCors } from "./http/localDevelopmentCors.js";
+import { isLocalDevelopmentCorsEnabled, localDevelopmentCors } from "./http/localDevelopmentCors.js";
 import { requestLogger } from "./infrastructure/observability/requestLogger.js";
 import { validateStartupConfiguration } from "./infrastructure/runtime/startupValidation.js";
 import { attachRequestContext } from "./http/requestContext.js";
 import { sendApiError } from "./http/errorEnvelope.js";
-import { GitHubAdapterError } from "./infrastructure/github/errors.js";
+import { unexpectedErrorHandler } from "./http/unexpectedErrorHandler.js";
 
 type CreateAppOptions = {
   additionalRoutes?: (app: express.Express) => void;
@@ -18,7 +18,9 @@ export function createApp(options: CreateAppOptions = {}) {
   const app = express();
   app.disable("x-powered-by");
 
-  app.use(localDevelopmentCors);
+  if (isLocalDevelopmentCorsEnabled()) {
+    app.use(localDevelopmentCors);
+  }
   app.use(attachRequestContext);
   app.use(requestLogger);
   app.use(opsRoutes);
@@ -37,27 +39,7 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   });
 
-  app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (res.headersSent) {
-      next(error);
-      return;
-    }
-
-    if (error instanceof GitHubAdapterError) {
-      sendApiError(res, {
-        status: error.status,
-        code: error.code,
-        message: error.message
-      });
-      return;
-    }
-
-    sendApiError(res, {
-      status: 500,
-      code: "UPSTREAM_UNAVAILABLE",
-      message: "Internal server error."
-    });
-  });
+  app.use(unexpectedErrorHandler);
 
   return app;
 }

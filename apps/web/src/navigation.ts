@@ -34,9 +34,9 @@ export const appRoutes: AppRouteDefinition[] = [
   {
     id: "security",
     path: "/security",
-    title: "Security",
-    description: "Security posture, alert triage, and repository risk reduction workflows.",
-    availability: "planned"
+    title: "Security Posture",
+    description: "Security score, risk indicators, and repository-level security context.",
+    availability: "live"
   },
   {
     id: "governance",

@@ -5,6 +5,7 @@ import { CommandCenterScreen } from "./screens/CommandCenterScreen";
 import { GitHubSettingsScreen } from "./screens/GitHubSettingsScreen";
 import { OrganizationHealthScreen } from "./screens/OrganizationHealthScreen";
 import { RepositoryUniverseScreen } from "./screens/RepositoryUniverse/RepositoryUniverseScreen";
+import { SecurityPostureScreen } from "./screens/SecurityPostureScreen";
 import { SectionPlaceholderScreen } from "./screens/SectionPlaceholderScreen";
 
 function syncScreenWithUrl(nextScreen: AppScreen, mode: "push" | "replace" = "push"): void {
@@ -83,6 +84,22 @@ export function App() {
         activeNavId={screen}
         onNavigate={navigateTo}
         healthData={githubHealth.viewModels.commandCenter}
+        integrationState={githubHealth.state}
+        connection={githubHealth.connection}
+        integrationError={githubHealth.error}
+        onConnectGitHub={githubHealth.connectGitHub}
+        onRetry={githubHealth.reload}
+      />
+    );
+  }
+
+  if (screen === "security") {
+    return (
+      <SecurityPostureScreen
+        activeNavId={screen}
+        onNavigate={navigateTo}
+        healthData={githubHealth.viewModels.commandCenter}
+        repositoryData={githubHealth.viewModels.repositoryUniverse}
         integrationState={githubHealth.state}
         connection={githubHealth.connection}
         integrationError={githubHealth.error}

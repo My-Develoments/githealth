@@ -19,7 +19,7 @@ export type GitHubAdapterIssue = {
   repositoryId?: string;
 };
 
-export type ApiHealthCategoryKey = "security" | "governance" | "cicd" | "quality-maintenance";
+export type ApiHealthCategoryKey = "repository-health" | "security" | "governance" | "cicd" | "quality-maintenance";
 
 export type ApiCategoryScore = {
   category: ApiHealthCategoryKey;

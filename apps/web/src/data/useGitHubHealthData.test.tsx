@@ -49,6 +49,38 @@ describe("useGitHubHealthData", () => {
       expect(result.current.state).toBe("partial");
     });
   });
+
+  it("preserves adapter error code/status for UI guidance", async () => {
+    mockedFetchGitHubHealthData.mockResolvedValueOnce(errorResult("AUTH_INVALID", "Invalid token", 401));
+
+    const { result } = renderHook(() => useGitHubHealthData());
+
+    await waitFor(() => {
+      expect(result.current.state).toBe("error");
+    });
+
+    expect(result.current.error).toEqual({
+      code: "AUTH_INVALID",
+      message: "Invalid token",
+      status: 401
+    });
+  });
+
+  it("keeps empty semantics distinct from loading/error", async () => {
+    mockedFetchGitHubHealthData.mockResolvedValueOnce(successResult("empty"));
+
+    const { result } = renderHook(() => useGitHubHealthData());
+
+    await waitFor(() => {
+      expect(result.current.state).toBe("empty");
+    });
+
+    expect(result.current.commandCenterActivity).toEqual({
+      isLoading: false,
+      isEmpty: true,
+      hasError: false
+    });
+  });
 });
 
 function successResult(state: "ready" | "partial" | "failed" | "empty"): GitHubHealthAdapterResult {

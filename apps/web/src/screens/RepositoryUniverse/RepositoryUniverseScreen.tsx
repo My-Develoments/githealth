@@ -27,6 +27,51 @@ type RepositoryUniverseScreenProps = {
 
 type DomainFilter = "all" | "security" | "governance" | "cicd" | "quality";
 
+function resolveErrorGuidance(error: RepositoryUniverseScreenProps["integrationError"]): {
+  title: string;
+  action: string;
+} {
+  if (!error) {
+    return {
+      title: "Universe Visualization Unavailable",
+      action: "Retry to restore live engineering signals."
+    };
+  }
+
+  if (error.code === "AUTH_MISSING" || error.code === "AUTH_INVALID") {
+    return {
+      title: "GitHub Authentication Required",
+      action: "Configure valid GitHub credentials, then retry the universe scan."
+    };
+  }
+
+  if (error.code === "PERMISSION_DENIED") {
+    return {
+      title: "GitHub Permission Denied",
+      action: "Grant the required organization read permissions, then retry."
+    };
+  }
+
+  if (error.code === "RATE_LIMITED") {
+    return {
+      title: "GitHub Rate Limit Reached",
+      action: "Wait for the limit window to reset, then retry the universe scan."
+    };
+  }
+
+  if (error.code === "UPSTREAM_UNAVAILABLE" || error.status === 0) {
+    return {
+      title: "Network Or Upstream Unavailable",
+      action: "Verify connectivity to GitHealth API/GitHub and retry when available."
+    };
+  }
+
+  return {
+    title: "Universe Visualization Unavailable",
+    action: "Retry the universe scan. If failure continues, inspect adapter diagnostics."
+  };
+}
+
 function usePrefersReducedMotion() {
   const [reducedMotion, setReducedMotion] = useState(false);
 
@@ -77,7 +122,15 @@ export function RepositoryUniverseScreen({ onBack, viewModel, integrationState, 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
-  const dataState = integrationState === "loading" ? "loading" : integrationState === "error" || integrationState === "failed" ? "error" : "ready";
+  const dataState =
+    integrationState === "loading"
+      ? "loading"
+      : integrationState === "error" || integrationState === "failed"
+        ? "error"
+        : integrationState === "empty"
+          ? "empty"
+          : "ready";
+  const errorGuidance = resolveErrorGuidance(integrationError);
 
   useEffect(() => {
     if (viewModel.repositories.length === 0) {
@@ -121,7 +174,7 @@ export function RepositoryUniverseScreen({ onBack, viewModel, integrationState, 
     return viewModel.repositories.find((repository) => repository.id === selectedRepositoryId) ?? null;
   }, [selectedRepositoryId, viewModel.repositories]);
 
-  const hasNoResults = dataState === "ready" && filteredRepositories.length === 0;
+  const hasNoResults = dataState === "ready" && viewModel.repositories.length > 0 && filteredRepositories.length === 0;
 
   const shellClass = `ru-shell ${dataState === "ready" ? "ru-shell--ready" : ""}`;
 
@@ -145,7 +198,7 @@ export function RepositoryUniverseScreen({ onBack, viewModel, integrationState, 
             {integrationState}
           </Badge>
           {(integrationState === "error" || integrationState === "failed") && (
-            <Button variant="secondary" size="sm" onClick={onRetry}>
+            <Button variant="secondary" size="sm" onClick={onRetry} aria-label="Retry repository universe">
               Retry
             </Button>
           )}
@@ -217,11 +270,36 @@ export function RepositoryUniverseScreen({ onBack, viewModel, integrationState, 
         <section className="ru-state-shell" aria-label="Error state">
           <Panel tone="elevated" className="ru-error-panel">
             <Heading as="h2" size="lg">
-              Universe Visualization Unavailable
+              {errorGuidance.title}
             </Heading>
-            <Text tone="secondary">{integrationError?.message ?? "Repository topology service failed to respond. Retry to restore live engineering signals."}</Text>
+            <Text tone="secondary">{integrationError?.message ?? "Repository topology service failed to respond."}</Text>
+            <Text size="sm" tone="muted">
+              {errorGuidance.action}
+            </Text>
+            {integrationError?.code ? <Badge tone="warning">{integrationError.code}</Badge> : null}
             <div className="ru-error-actions">
-              <Button variant="primary" onClick={onRetry}>
+              <Button variant="primary" onClick={onRetry} aria-label="Retry repository universe">
+                Retry Universe
+              </Button>
+              <Button variant="secondary" onClick={onBack}>
+                Return To Command Center
+              </Button>
+            </div>
+          </Panel>
+        </section>
+      ) : null}
+
+      {dataState === "empty" ? (
+        <section className="ru-state-shell" aria-label="Empty data state">
+          <Panel tone="elevated" className="ru-empty-panel">
+            <Heading as="h2" size="lg">
+              No Repository Health Data Available
+            </Heading>
+            <Text tone="secondary">
+              The API request succeeded but returned zero repositories for this organization/source.
+            </Text>
+            <div className="ru-empty-actions">
+              <Button variant="primary" onClick={onRetry} aria-label="Retry repository universe">
                 Retry Universe
               </Button>
               <Button variant="secondary" onClick={onBack}>

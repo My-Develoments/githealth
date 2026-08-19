@@ -53,22 +53,28 @@ export function UniverseInsightsPanel({ insights, activity, repositories }: Univ
         <Heading as="h3" size="sm">
           Top Risk Repositories
         </Heading>
-        <ul className="ru-risk-list">
-          {highestRisk.map((repository) => (
-            <li key={repository.id}>
-              <Text size="sm">{repository.name}</Text>
-              <div className="ru-risk-score-wrap">
-                <span className="ru-risk-bar" style={{ width: `${repository.healthScore}%` }} />
-                <Text size="sm" tone="muted">
-                  {repository.healthScore}
-                </Text>
-                <Text size="sm" tone="secondary">
-                  {statusLabel(repository.status)}
-                </Text>
-              </div>
-            </li>
-          ))}
-        </ul>
+        {highestRisk.length > 0 ? (
+          <ul className="ru-risk-list">
+            {highestRisk.map((repository) => (
+              <li key={repository.id}>
+                <Text size="sm">{repository.name}</Text>
+                <div className="ru-risk-score-wrap">
+                  <span className="ru-risk-bar" style={{ width: `${repository.healthScore}%` }} />
+                  <Text size="sm" tone="muted">
+                    {repository.healthScore}
+                  </Text>
+                  <Text size="sm" tone="secondary">
+                    {statusLabel(repository.status)}
+                  </Text>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Text size="sm" tone="muted">
+            Top risk ranking is unavailable because no repositories have ranked health scores.
+          </Text>
+        )}
       </Panel>
 
       <Panel tone="subtle" className="ru-activity-panel">

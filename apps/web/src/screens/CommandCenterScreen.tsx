@@ -112,8 +112,56 @@ type CommandCenterScreenProps = {
   onExploreUniverse?: () => void;
   healthData?: CommandCenterHealthViewModel;
   activityState?: CommandCenterActivityState;
+  integrationError?: {
+    message: string;
+    code: string;
+    status: number;
+  } | null;
+  onRetry?: () => void;
   recentActivity?: typeof recentEngineeringActivityDefaults;
 };
+
+function resolveErrorGuidance(error: CommandCenterScreenProps["integrationError"]): { title: string; action: string } {
+  if (!error) {
+    return {
+      title: "Live health data is currently unavailable.",
+      action: "Retry the health check to refresh engineering signals."
+    };
+  }
+
+  if (error.code === "AUTH_MISSING" || error.code === "AUTH_INVALID") {
+    return {
+      title: "GitHub authentication is required.",
+      action: "Update GitHub credentials in environment configuration, then retry."
+    };
+  }
+
+  if (error.code === "PERMISSION_DENIED") {
+    return {
+      title: "GitHub permissions are insufficient.",
+      action: "Grant required read access to organization health data, then retry."
+    };
+  }
+
+  if (error.code === "RATE_LIMITED") {
+    return {
+      title: "GitHub rate limit reached.",
+      action: "Wait for the rate-limit window to reset, then retry the health check."
+    };
+  }
+
+  if (error.code === "UPSTREAM_UNAVAILABLE" || error.status === 0) {
+    return {
+      title: "GitHub or network service is unavailable.",
+      action: "Verify network/API availability and retry when connectivity is restored."
+    };
+  }
+
+  return {
+    title: "Unable to load live health data.",
+    action: "Retry the health check. If the issue persists, inspect adapter diagnostics."
+  };
+}
 
 const unavailableHealthViewModel: CommandCenterHealthViewModel = {
   source: "live",
@@ -133,7 +181,7 @@ const unavailableHealthViewModel: CommandCenterHealthViewModel = {
   adapterIssues: []
 };
 
-export function CommandCenterScreen({ onExploreUniverse, healthData, activityState, recentActivity }: CommandCenterScreenProps) {
+export function CommandCenterScreen({ onExploreUniverse, healthData, activityState, integrationError, onRetry, recentActivity }: CommandCenterScreenProps) {
   const resolvedHealth: CommandCenterHealthViewModel = healthData ?? unavailableHealthViewModel;
   const isMockSource = resolvedHealth.source === "mock";
 
@@ -153,6 +201,7 @@ export function CommandCenterScreen({ onExploreUniverse, healthData, activitySta
 
   const resolvedRecentActivity = recentActivity ?? (isMockSource ? recentEngineeringActivityDefaults : []);
   const reducedMotion = usePrefersReducedMotion();
+  const errorGuidance = resolveErrorGuidance(integrationError);
 
   const animatedScore = useAnimatedNumber(resolvedHealth.score, 1180, reducedMotion, 260);
   const animatedRepositories = useAnimatedNumber(resolvedHealth.totalRepositories, 960, reducedMotion, 760);
@@ -723,9 +772,12 @@ export function CommandCenterScreen({ onExploreUniverse, healthData, activitySta
             {resolvedActivity.hasError ? (
               <>
                 <Text size="sm" tone="secondary">
-                  Live health data is currently unavailable. Review adapter issues and retry.
+                  {errorGuidance.title}
                 </Text>
-                <Button variant="secondary" size="sm">
+                <Text size="sm" tone="muted">
+                  {errorGuidance.action}
+                </Text>
+                <Button variant="secondary" size="sm" onClick={onRetry} aria-label="Retry health check">
                   Retry Check
                 </Button>
               </>

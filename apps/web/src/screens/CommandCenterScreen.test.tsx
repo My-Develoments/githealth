@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { CommandCenterScreen } from "./CommandCenterScreen";
 import type { CommandCenterHealthViewModel } from "../data/githubHealthViewMappers";
@@ -46,6 +46,51 @@ describe("CommandCenterScreen source isolation", () => {
     expect(screen.getByText("Achievement data is unavailable in live mode.")).toBeTruthy();
     expect(screen.queryByText("Security Champion")).toBeNull();
     expect(screen.queryByText("Good morning, Kuldeep.")).toBeNull();
+  });
+
+  it("invokes retry callback when error recovery action is used", () => {
+    const onRetry = vi.fn();
+
+    render(
+      <CommandCenterScreen
+        healthData={buildHealthModel("live")}
+        activityState={{ isLoading: false, isEmpty: false, hasError: true }}
+        integrationError={{
+          code: "AUTH_INVALID",
+          message: "Authentication failed",
+          status: 401
+        }}
+        onRetry={onRetry}
+        recentActivity={[]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry health check" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render retry action when there is no error", () => {
+    render(
+      <CommandCenterScreen
+        healthData={buildHealthModel("live")}
+        activityState={{ isLoading: false, isEmpty: false, hasError: false }}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: "Retry health check" })).toBeNull();
+  });
+
+  it("keeps loading state distinct from empty and healthy states", () => {
+    render(
+      <CommandCenterScreen
+        healthData={buildHealthModel("live")}
+        activityState={{ isLoading: true, isEmpty: false, hasError: false }}
+      />
+    );
+
+    expect(screen.queryByText("No repository data available yet.")).toBeNull();
+    expect(screen.queryByText("No active loading jobs.")).toBeNull();
+    expect(screen.getByText("Data Loading")).toBeTruthy();
   });
 
   it("does not fallback to mock recent activity in live mode", () => {

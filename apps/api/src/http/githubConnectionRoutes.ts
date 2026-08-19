@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import {
   createGitHubAppInstallationSession,
   fetchGitHubAppInstallation
@@ -11,22 +11,11 @@ import {
 import { GitHubAdapterError } from "../infrastructure/github/errors.js";
 import { getApiProtectionConfig, isAllowedGitHubOrganization } from "../infrastructure/security/apiProtectionConfig.js";
 import { sendApiError } from "./errorEnvelope.js";
-import { githubEndpointAuth } from "./githubEndpointAuth.js";
+import { GITHUB_APP_SESSION_COOKIE } from "./requestContext.js";
 
 export const githubConnectionRoutes = Router();
 
-function runProtectedMiddleware(
-  middleware: (req: Parameters<typeof githubEndpointAuth>[0], res: Parameters<typeof githubEndpointAuth>[1], next: Parameters<typeof githubEndpointAuth>[2]) => void,
-  req: Parameters<typeof githubEndpointAuth>[0],
-  res: Parameters<typeof githubEndpointAuth>[1]
-): boolean {
-  let proceeded = false;
-  middleware(req, res, () => {
-    proceeded = true;
-  });
-
-  return proceeded;
-}
+const INSTALLATION_SESSION_COOKIE_TTL_SECONDS = 60 * 60;
 
 function toPositiveInteger(value: unknown): number | undefined {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -58,13 +47,15 @@ function resolveSetupAction(value: unknown): "install" | "request" | undefined {
 }
 
 function sendCallbackFailure(
-  res: Parameters<typeof githubEndpointAuth>[1],
+  res: Response,
   config: ReturnType<typeof getGitHubConfig>,
   status: number,
   code: string,
   message: string,
   connectionState: Extract<GitHubConnectionState, "error" | "unauthorized_installation" | "ready_to_connect">
 ): void {
+  clearInstallationSessionCookie(res);
+
   if (config.authProvider === "app" && config.app?.onboardingRedirectUrl) {
     const redirectUrl = new URL(config.app.onboardingRedirectUrl);
     redirectUrl.searchParams.set("github_app_callback", "received");
@@ -105,20 +96,71 @@ function assertInstallationIsAllowed(organization: string, targetType: string): 
   }
 }
 
-githubConnectionRoutes.get("/status", async (req, res) => {
-  if (!runProtectedMiddleware(githubEndpointAuth, req, res)) {
-    return;
+function shouldUseSecureCookie(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+
+function buildSessionCookieValue(sessionToken: string, maxAgeSeconds = INSTALLATION_SESSION_COOKIE_TTL_SECONDS): string {
+  const attributes = [
+    `${GITHUB_APP_SESSION_COOKIE}=${encodeURIComponent(sessionToken)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${maxAgeSeconds}`
+  ];
+
+  if (shouldUseSecureCookie()) {
+    attributes.push("Secure");
   }
 
-  const status = await getGitHubConnectionStatus();
-  res.json(status);
+  return attributes.join("; ");
+}
+
+function writeInstallationSessionCookie(res: Response, sessionToken: string): void {
+  res.append("Set-Cookie", buildSessionCookieValue(sessionToken));
+}
+
+function clearInstallationSessionCookie(res: Response): void {
+  const attributes = [
+    `${GITHUB_APP_SESSION_COOKIE}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0"
+  ];
+
+  if (shouldUseSecureCookie()) {
+    attributes.push("Secure");
+  }
+
+  res.append("Set-Cookie", attributes.join("; "));
+}
+
+githubConnectionRoutes.get("/status", async (req, res) => {
+  try {
+    const status = await getGitHubConnectionStatus();
+    res.json(status);
+  } catch (error) {
+    if (error instanceof GitHubAdapterError && error.code === "AUTH_INVALID") {
+      clearInstallationSessionCookie(res);
+      res.json({
+        provider: "app",
+        status: "unauthorized_installation",
+        isConnected: false,
+        canConnect: true,
+        hasInstallationId: false,
+        installUrlConfigured: true,
+        callbackRedirectConfigured: true,
+        message: error.message
+      });
+      return;
+    }
+
+    throw error;
+  }
 });
 
 githubConnectionRoutes.get("/start", (req, res) => {
-  if (!runProtectedMiddleware(githubEndpointAuth, req, res)) {
-    return;
-  }
-
   const config = getGitHubConfig();
   if (config.authProvider !== "app") {
     sendApiError(res, {
@@ -129,11 +171,11 @@ githubConnectionRoutes.get("/start", (req, res) => {
     return;
   }
 
-  if (!config.app?.installUrl) {
+  if (!config.app?.installUrl || !config.app.onboardingRedirectUrl) {
     sendApiError(res, {
       status: 503,
       code: "INVALID_RESPONSE",
-      message: "GitHub App install URL is not configured."
+      message: "GitHub App onboarding is not fully configured."
     });
     return;
   }
@@ -199,6 +241,7 @@ githubConnectionRoutes.get("/callback", async (req, res) => {
     assertInstallationIsAllowed(installation.organization, installation.targetType);
 
     const sessionToken = createGitHubAppInstallationSession(config, installation);
+    writeInstallationSessionCookie(res, sessionToken);
     const status = resolveCallbackStatus(true);
     const message = "GitHub App installation completed successfully. GitHealth can now authenticate with the installed app.";
 
@@ -207,7 +250,6 @@ githubConnectionRoutes.get("/callback", async (req, res) => {
       redirectUrl.searchParams.set("github_app_status", status);
       redirectUrl.searchParams.set("github_app_callback", "received");
       redirectUrl.searchParams.set("github_app_setup_action", setupAction);
-      redirectUrl.searchParams.set("github_app_session", sessionToken);
       redirectUrl.searchParams.set("github_app_message", message);
 
       res.redirect(302, redirectUrl.toString());
@@ -219,7 +261,7 @@ githubConnectionRoutes.get("/callback", async (req, res) => {
       status,
       setupAction,
       message,
-      sessionToken
+      organization: installation.organization
     });
   } catch (error) {
     if (error instanceof GitHubAdapterError) {

@@ -1,5 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
+import { getCurrentGitHubAppInstallationSession } from "../infrastructure/github/appAuth.js";
+import { getGitHubConfig } from "../infrastructure/github/config.js";
+import { GitHubAdapterError } from "../infrastructure/github/errors.js";
 import { getApiProtectionConfig } from "../infrastructure/security/apiProtectionConfig.js";
 import { sendApiError } from "./errorEnvelope.js";
 
@@ -38,6 +41,31 @@ export function githubEndpointAuth(req: Request, res: Response, next: NextFuncti
   const { apiAuthToken } = getApiProtectionConfig();
   const authHeader = req.header("authorization");
   const parsed = extractBearerToken(authHeader);
+
+  try {
+    const config = getGitHubConfig();
+    const requestSession = config.authProvider === "app"
+      ? getCurrentGitHubAppInstallationSession(config)
+      : undefined;
+
+    if (config.authProvider === "app" && (requestSession || typeof config.app?.installationId === "number")) {
+      next();
+      return;
+    }
+  } catch (error) {
+    if (error instanceof GitHubAdapterError && error.code === "AUTH_INVALID") {
+      sendApiError(res, {
+        status: 401,
+        code: error.code,
+        message: error.message
+      });
+      return;
+    }
+
+    if (!(error instanceof GitHubAdapterError)) {
+      throw error;
+    }
+  }
 
   if (parsed.missing) {
     sendApiError(res, {

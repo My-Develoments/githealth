@@ -34,6 +34,7 @@ export async function requestJson<T>(url: string, options: RequestJsonOptions = 
     response = await fetch(url, {
       method: "GET",
       headers: buildRequestHeaders(options.headers),
+      credentials: "include",
       signal: options.signal
     });
   } catch {

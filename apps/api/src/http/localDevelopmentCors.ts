@@ -12,6 +12,7 @@ function applyCorsHeaders(res: Response, origin: string): void {
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Methods", ALLOWED_METHODS);
   res.setHeader("Access-Control-Allow-Headers", ALLOWED_HEADERS);
+  res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Vary", "Origin");
 }
 

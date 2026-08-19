@@ -180,6 +180,7 @@ export type GitHubConnectionStatusResponse = {
   installUrlConfigured: boolean;
   callbackRedirectConfigured: boolean;
   message: string;
+  organization?: string;
 };
 
 export type GitHubConnectionStartResponse = {

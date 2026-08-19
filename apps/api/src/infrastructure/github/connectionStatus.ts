@@ -19,10 +19,38 @@ export type GitHubConnectionStatusResponse = {
   installUrlConfigured: boolean;
   callbackRedirectConfigured: boolean;
   message: string;
+  organization?: string;
 };
 
+function configuredAuthProvider(): GitHubAuthProvider {
+  return process.env.GITHUB_AUTH_PROVIDER?.trim().toLowerCase() === "app" ? "app" : "pat";
+}
+
+function buildNotConfiguredAppStatus(message: string): GitHubConnectionStatusResponse {
+  return {
+    provider: "app",
+    status: "not_configured",
+    isConnected: false,
+    canConnect: false,
+    hasInstallationId: false,
+    installUrlConfigured: false,
+    callbackRedirectConfigured: false,
+    message
+  };
+}
+
 export async function getGitHubConnectionStatus(): Promise<GitHubConnectionStatusResponse> {
-  const config = getGitHubConfig();
+  let config;
+
+  try {
+    config = getGitHubConfig();
+  } catch (error) {
+    if (error instanceof GitHubAdapterError && configuredAuthProvider() === "app") {
+      return buildNotConfiguredAppStatus("GitHub App onboarding is not configured for this environment.");
+    }
+
+    throw error;
+  }
 
   if (config.authProvider === "pat") {
     return {
@@ -59,17 +87,21 @@ export async function getGitHubConnectionStatus(): Promise<GitHubConnectionStatu
   const callbackRedirectConfigured = typeof appConfig.onboardingRedirectUrl === "string";
 
   if (!hasInstallationId) {
+    const onboardingReady = installUrlConfigured && callbackRedirectConfigured;
+
     return {
       provider: "app",
-      status: installUrlConfigured ? "ready_to_connect" : "not_configured",
+      status: onboardingReady ? "ready_to_connect" : "not_configured",
       isConnected: false,
-      canConnect: installUrlConfigured,
+      canConnect: onboardingReady,
       hasInstallationId,
       installUrlConfigured,
       callbackRedirectConfigured,
-      message: installUrlConfigured
-        ? "GitHub App is configured and ready to connect."
-        : "GitHub App onboarding is unavailable because GITHUB_APP_INSTALL_URL is not configured."
+      message: !installUrlConfigured
+        ? "GitHub App onboarding is unavailable because the install URL is not configured."
+        : !callbackRedirectConfigured
+          ? "GitHub App onboarding is unavailable because the application return URL is not configured."
+          : "GitHub App is configured and ready to connect."
     };
   }
 
@@ -84,7 +116,8 @@ export async function getGitHubConnectionStatus(): Promise<GitHubConnectionStatu
       hasInstallationId,
       installUrlConfigured,
       callbackRedirectConfigured,
-      message: "GitHub App installation is connected."
+      message: "GitHub App installation is connected.",
+      organization: requestSession?.organization
     };
   } catch (error) {
     if (error instanceof GitHubAdapterError) {
@@ -101,7 +134,8 @@ export async function getGitHubConnectionStatus(): Promise<GitHubConnectionStatu
         hasInstallationId,
         installUrlConfigured,
         callbackRedirectConfigured,
-        message: error.message
+        message: error.message,
+        organization: requestSession?.organization
       };
     }
 

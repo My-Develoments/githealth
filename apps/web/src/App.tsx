@@ -70,11 +70,13 @@ export function App() {
   if (screen === "settings") {
     const commandCenterView = githubHealth.viewModels.commandCenter;
     const connectedOrganization =
-      commandCenterView.source === "live" &&
-      githubHealth.connection.isConnected &&
-      commandCenterView.organization !== "Unavailable"
-        ? commandCenterView.organization
-        : undefined;
+      githubHealth.connection.organization ?? (
+        commandCenterView.source === "live" &&
+        githubHealth.connection.isConnected &&
+        commandCenterView.organization !== "Unavailable"
+          ? commandCenterView.organization
+          : undefined
+      );
 
     return (
       <GitHubSettingsScreen

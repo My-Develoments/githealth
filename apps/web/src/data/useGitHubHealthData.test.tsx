@@ -13,17 +13,18 @@ vi.mock("./githubConnectionDataAdapter", () => ({
 }));
 
 import { fetchGitHubHealthData } from "./githubHealthDataAdapter";
-import { fetchGitHubConnectionStatus } from "./githubConnectionDataAdapter";
+import { fetchGitHubConnectionStatus, startGitHubConnection } from "./githubConnectionDataAdapter";
 
 const mockedFetchGitHubHealthData = vi.mocked(fetchGitHubHealthData);
 const mockedFetchGitHubConnectionStatus = vi.mocked(fetchGitHubConnectionStatus);
-const GITHUB_APP_SESSION_STORAGE_KEY = "githealth.githubAppSession";
+const mockedStartGitHubConnection = vi.mocked(startGitHubConnection);
 
 beforeEach(() => {
   mockedFetchGitHubHealthData.mockReset();
   mockedFetchGitHubConnectionStatus.mockReset();
-  window.sessionStorage.clear();
+  mockedStartGitHubConnection.mockReset();
   window.history.replaceState({}, "", "/");
+  mockedFetchGitHubHealthData.mockResolvedValue(successResult("ready"));
   mockedFetchGitHubConnectionStatus.mockResolvedValue({
     provider: "pat",
     status: "connected",
@@ -139,7 +140,8 @@ describe("useGitHubHealthData", () => {
       hasInstallationId: true,
       installUrlConfigured: true,
       callbackRedirectConfigured: true,
-      message: "GitHub App installation is connected."
+      message: "GitHub App installation is connected.",
+      organization: "githealth-labs"
     });
     mockedFetchGitHubHealthData.mockResolvedValueOnce(successResult("ready"));
 
@@ -149,12 +151,11 @@ describe("useGitHubHealthData", () => {
       expect(result.current.connection.status).toBe("connected");
     });
 
-    expect(window.sessionStorage.getItem(GITHUB_APP_SESSION_STORAGE_KEY)).toBe("opaque-session");
     expect(mockedFetchGitHubConnectionStatus.mock.calls[0]?.[0]).toEqual({
-      signal: expect.any(AbortSignal),
-      installationSession: "opaque-session"
+      signal: expect.any(AbortSignal)
     });
     expect(window.location.search).toBe("");
+    expect(result.current.connection.organization).toBe("githealth-labs");
   });
 
   it("surfaces callback authorization errors without calling live health fetch", async () => {
@@ -178,6 +179,54 @@ describe("useGitHubHealthData", () => {
     });
     expect(mockedFetchGitHubConnectionStatus).not.toHaveBeenCalled();
     expect(mockedFetchGitHubHealthData).not.toHaveBeenCalled();
+  });
+
+  it("starts onboarding and redirects the browser to the backend-provided GitHub install URL", async () => {
+    mockedStartGitHubConnection.mockResolvedValueOnce({
+      provider: "app",
+      status: "ready_to_connect",
+      connectUrl: "https://github.com/apps/githealth/installations/new"
+    });
+    const assignSpy = vi.spyOn(window.location, "assign").mockImplementation(() => undefined);
+
+    const { result } = renderHook(() => useGitHubHealthData());
+
+    await waitFor(() => {
+      expect(result.current.connection.status).toBe("connected");
+    });
+
+    await act(async () => {
+      await result.current.connectGitHub();
+    });
+
+    expect(mockedStartGitHubConnection).toHaveBeenCalledTimes(1);
+    expect(assignSpy).toHaveBeenCalledWith("https://github.com/apps/githealth/installations/new");
+  });
+
+  it("surfaces onboarding start failures as retryable error state", async () => {
+    mockedStartGitHubConnection.mockRejectedValueOnce({
+      code: "UPSTREAM_UNAVAILABLE",
+      message: "Unable to start GitHub App onboarding.",
+      status: 503
+    });
+
+    const { result } = renderHook(() => useGitHubHealthData());
+
+    await waitFor(() => {
+      expect(result.current.connection.status).toBe("connected");
+    });
+
+    await act(async () => {
+      await result.current.connectGitHub();
+    });
+
+    expect(result.current.state).toBe("error");
+    expect(result.current.connection.status).toBe("error");
+    expect(result.current.error).toEqual({
+      code: "UPSTREAM_UNAVAILABLE",
+      message: "Unable to start GitHub App onboarding.",
+      status: 503
+    });
   });
 });
 

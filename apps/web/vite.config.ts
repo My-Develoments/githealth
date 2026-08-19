@@ -13,6 +13,10 @@ export default defineConfig({
       "/health-score": {
         target: "http://localhost:4000",
         changeOrigin: true
+      },
+      "/github": {
+        target: "http://localhost:4000",
+        changeOrigin: true
       }
     }
   },

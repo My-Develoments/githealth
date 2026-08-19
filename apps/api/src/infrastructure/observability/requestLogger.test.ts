@@ -59,10 +59,12 @@ async function withServer<T>(run: (baseUrl: string) => Promise<T>): Promise<T> {
 
 describe("requestLogger", () => {
   const previousToken = process.env.GITHUB_TOKEN;
+  const previousApiAuthToken = process.env.API_AUTH_TOKEN;
 
   afterEach(() => {
     vi.restoreAllMocks();
     restoreEnv("GITHUB_TOKEN", previousToken);
+    restoreEnv("API_AUTH_TOKEN", previousApiAuthToken);
   });
 
   it("logs method, path, status, durationMs, and requestId for successful requests", async () => {
@@ -93,6 +95,7 @@ describe("requestLogger", () => {
 
   it("logs failure requests and redacts sensitive values through logger path", async () => {
     process.env.GITHUB_TOKEN = "secret-token";
+    process.env.API_AUTH_TOKEN = "secure-api-token";
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     await withServer(async (baseUrl) => {
@@ -116,5 +119,6 @@ describe("requestLogger", () => {
     expect(typeof payload.requestId).toBe("string");
     expect(payload.path).toContain("[REDACTED]");
     expect(rawLog).not.toContain("secret-token");
+    expect(rawLog).not.toContain("secure-api-token");
   });
 });

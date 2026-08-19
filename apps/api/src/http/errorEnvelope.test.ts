@@ -52,13 +52,16 @@ async function withServer<T>(run: (baseUrl: string) => Promise<T>): Promise<T> {
 
 describe("sendApiError", () => {
   const previousToken = process.env.GITHUB_TOKEN;
+  const previousApiAuthToken = process.env.API_AUTH_TOKEN;
 
   afterEach(() => {
     restoreEnv("GITHUB_TOKEN", previousToken);
+    restoreEnv("API_AUTH_TOKEN", previousApiAuthToken);
   });
 
   it("redacts token-like values and includes request id", async () => {
     process.env.GITHUB_TOKEN = "abc123";
+    process.env.API_AUTH_TOKEN = "xyz789";
 
     await withServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/test-error`);
@@ -67,6 +70,7 @@ describe("sendApiError", () => {
       expect(response.status).toBe(500);
       expect(body.code).toBe("UPSTREAM_UNAVAILABLE");
       expect(body.message).not.toContain("abc123");
+      expect(body.message).not.toContain("xyz789");
       expect(body.message).toContain("Bearer [REDACTED]");
       expect(typeof body.requestId).toBe("string");
       expect(body.requestId.length).toBeGreaterThan(0);

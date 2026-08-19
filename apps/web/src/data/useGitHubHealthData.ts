@@ -16,8 +16,9 @@ import {
   fetchGitHubHealthData,
   type GitHubHealthAdapterFailure
 } from "./githubHealthDataAdapter";
+import { fetchGitHubConnectionStatus, startGitHubConnection } from "./githubConnectionDataAdapter";
 import { resolveGitHubHealthConfig } from "./githubHealthConfig";
-import type { GitHubHealthIntegrationState } from "./githubHealthContracts";
+import type { GitHubConnectionViewModel, GitHubHealthIntegrationState } from "./githubHealthContracts";
 import {
   buildCommandCenterActivityState,
   mapGitHubHealthToViewModels,
@@ -29,9 +30,37 @@ type UseGitHubHealthDataResult = {
   state: GitHubHealthIntegrationState;
   commandCenterActivity: CommandCenterActivityState;
   viewModels: GitHubHealthViewModels;
+  connection: GitHubConnectionViewModel;
   error: GitHubHealthAdapterFailure["error"] | null;
   reload: () => void;
+  connectGitHub: () => Promise<void>;
 };
+
+function createInitialConnectionState(source: "live" | "mock"): GitHubConnectionViewModel {
+  if (source === "mock") {
+    return {
+      provider: "pat",
+      status: "connected",
+      isConnected: true,
+      canConnect: false,
+      hasInstallationId: false,
+      installUrlConfigured: false,
+      callbackRedirectConfigured: false,
+      message: "Mock GitHub source is active."
+    };
+  }
+
+  return {
+    provider: "pat",
+    status: "connecting",
+    isConnected: false,
+    canConnect: false,
+    hasInstallationId: false,
+    installUrlConfigured: false,
+    callbackRedirectConfigured: false,
+    message: "Checking GitHub connection status."
+  };
+}
 
 function createDefaultViewModels(source: "live" | "mock"): GitHubHealthViewModels {
   if (source === "mock") {
@@ -117,14 +146,65 @@ export function useGitHubHealthData(): UseGitHubHealthDataResult {
   const [state, setState] = useState<GitHubHealthIntegrationState>("loading");
   const [error, setError] = useState<GitHubHealthAdapterFailure["error"] | null>(null);
   const [viewModels, setViewModels] = useState<GitHubHealthViewModels>(() => createDefaultViewModels(initialSource));
+  const [connection, setConnection] = useState<GitHubConnectionViewModel>(() => createInitialConnectionState(initialSource));
   const [reloadSeed, setReloadSeed] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
+    const source = resolveGitHubHealthConfig().source;
     setState("loading");
     setError(null);
+    setConnection(createInitialConnectionState(source));
 
-    void fetchGitHubHealthData(controller.signal).then((result) => {
+    void (async () => {
+      if (source === "live") {
+        try {
+          const nextConnection = await fetchGitHubConnectionStatus(controller.signal);
+          if (controller.signal.aborted) {
+            return;
+          }
+
+          setConnection(nextConnection);
+
+          if (nextConnection.provider === "app" && !nextConnection.isConnected) {
+            setViewModels(createDefaultViewModels("live"));
+            setState(nextConnection.status === "error" ? "error" : "empty");
+            if (nextConnection.status === "error") {
+              setError({
+                code: "AUTH_INVALID",
+                message: nextConnection.message,
+                status: 503
+              });
+            }
+            return;
+          }
+        } catch (connectionError) {
+          if (controller.signal.aborted) {
+            return;
+          }
+
+          const apiError = connectionError as GitHubHealthAdapterFailure["error"];
+          setConnection({
+            provider: "app",
+            status: "error",
+            isConnected: false,
+            canConnect: false,
+            hasInstallationId: false,
+            installUrlConfigured: false,
+            callbackRedirectConfigured: false,
+            message: apiError.message || "Unable to determine GitHub connection status."
+          });
+          setState("error");
+          setError({
+            code: apiError.code || "UPSTREAM_UNAVAILABLE",
+            message: apiError.message || "Unable to determine GitHub connection status.",
+            status: Number.isFinite(apiError.status) ? apiError.status : 0
+          });
+          return;
+        }
+      }
+
+      const result = await fetchGitHubHealthData(controller.signal);
       if (controller.signal.aborted) {
         return;
       }
@@ -137,7 +217,7 @@ export function useGitHubHealthData(): UseGitHubHealthDataResult {
 
       setViewModels(mapGitHubHealthToViewModels(result.data));
       setState(result.state);
-    });
+    })();
 
     return () => {
       controller.abort();
@@ -146,6 +226,28 @@ export function useGitHubHealthData(): UseGitHubHealthDataResult {
 
   const reload = useCallback(() => {
     setReloadSeed((value) => value + 1);
+  }, []);
+
+  const connectGitHub = useCallback(async () => {
+    setConnection((current) => ({
+      ...current,
+      provider: "app",
+      status: "connecting",
+      message: "Redirecting to GitHub App installation."
+    }));
+
+    try {
+      const response = await startGitHubConnection();
+      window.location.assign(response.connectUrl);
+    } catch (connectError) {
+      const apiError = connectError as GitHubHealthAdapterFailure["error"];
+      setConnection((current) => ({
+        ...current,
+        provider: "app",
+        status: "error",
+        message: apiError.message || "Unable to start GitHub App onboarding."
+      }));
+    }
   }, []);
 
   const commandCenterActivity = useMemo(() => {
@@ -172,8 +274,10 @@ export function useGitHubHealthData(): UseGitHubHealthDataResult {
     state,
     commandCenterActivity,
     viewModels,
+    connection,
     error,
-    reload
+    reload,
+    connectGitHub
   };
 }
 

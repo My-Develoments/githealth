@@ -19,6 +19,8 @@ function redactKnownSecrets(value: string): string {
   const knownSecrets = [
     process.env.GITHUB_TOKEN,
     process.env.API_AUTH_TOKEN,
+    process.env.GITHUB_APP_PRIVATE_KEY,
+    process.env.GITHUB_APP_CLIENT_SECRET,
     process.env.GITHUB_API_BASE_URL
   ].filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
 

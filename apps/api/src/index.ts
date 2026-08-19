@@ -1,4 +1,5 @@
 import express from "express";
+import { githubConnectionRoutes } from "./http/githubConnectionRoutes.js";
 import { githubHealthScoreRoutes } from "./http/githubHealthScoreRoutes.js";
 import { healthScoreRoutes } from "./http/healthScoreRoutes.js";
 import { opsRoutes } from "./http/opsRoutes.js";
@@ -21,6 +22,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use(attachRequestContext);
   app.use(requestLogger);
   app.use(opsRoutes);
+  app.use("/github/connection", githubConnectionRoutes);
 
   app.use("/health-score", healthScoreRoutes);
   app.use("/health-score/github", githubHealthScoreRoutes);

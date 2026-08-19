@@ -2,6 +2,7 @@ import type { GitHubOrganizationDataAdapter, GitHubOrganizationDataRequest } fro
 import { mapGitHubSignalsToNormalizedOrganization } from "../../../application/githubSignalMapper.js";
 import type { GitHubAdapterIssue } from "../../../application/githubNormalizedModels.js";
 import { GitHubAdapterError, normalizeGitHubHttpError } from "../errors.js";
+import { resolveGitHubAccessToken } from "../appAuth.js";
 import { getGitHubConfig, type GitHubConfig } from "../config.js";
 import { runWithRateLimitRetry } from "../rateLimit.js";
 import type { GitHubOrganizationSlice, GitHubRepositorySignalInput, GitHubRepositorySlice } from "../types.js";
@@ -252,7 +253,7 @@ async function requestJsonResponse<T>(url: string, token: string, timeoutMs: num
 }
 async function requestJsonWithRetry<T>(url: string, config: GitHubConfig): Promise<JsonResponse<T>> {
   return runWithRateLimitRetry(
-    () => requestJsonResponse<T>(url, config.token as string, config.timeoutMs),
+    async () => requestJsonResponse<T>(url, await resolveGitHubAccessToken(config), config.timeoutMs),
     {
       maxRetries: config.maxRetries,
       baseDelayMs: config.retryBaseDelayMs
@@ -699,9 +700,6 @@ function mapBaseRepositorySlice(input: RepositoryListItem): GitHubRepositorySlic
 export class LiveGitHubOrganizationAdapter implements GitHubOrganizationDataAdapter {
   async fetchOrganizationData(request: GitHubOrganizationDataRequest) {
     const config = getGitHubConfig();
-    if (!config.token) {
-      throw new GitHubAdapterError("AUTH_MISSING", "GITHUB_TOKEN is required for live GitHub source.", 401);
-    }
 
     const organizationSlug = safeName(request.organization);
     const orgPath = `${config.apiBaseUrl}/orgs/${organizationSlug}`;

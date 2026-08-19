@@ -69,6 +69,32 @@ describe("CommandCenterScreen source isolation", () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
+  it("renders a connect action when GitHub App mode is ready to connect", () => {
+    const onConnectGitHub = vi.fn();
+
+    render(
+      <CommandCenterScreen
+        healthData={buildHealthModel("live")}
+        activityState={{ isLoading: false, isEmpty: true, hasError: false }}
+        connection={{
+          provider: "app",
+          status: "ready_to_connect",
+          isConnected: false,
+          canConnect: true,
+          hasInstallationId: false,
+          installUrlConfigured: true,
+          callbackRedirectConfigured: false,
+          message: "GitHub App is configured and ready to connect."
+        }}
+        onConnectGitHub={onConnectGitHub}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }));
+    expect(onConnectGitHub).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Ready to connect")).toBeTruthy();
+  });
+
   it("does not render retry action when there is no error", () => {
     render(
       <CommandCenterScreen

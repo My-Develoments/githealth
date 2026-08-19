@@ -7,12 +7,30 @@ vi.mock("./githubHealthDataAdapter", () => ({
   fetchGitHubHealthData: vi.fn()
 }));
 
+vi.mock("./githubConnectionDataAdapter", () => ({
+  fetchGitHubConnectionStatus: vi.fn(),
+  startGitHubConnection: vi.fn()
+}));
+
 import { fetchGitHubHealthData } from "./githubHealthDataAdapter";
+import { fetchGitHubConnectionStatus } from "./githubConnectionDataAdapter";
 
 const mockedFetchGitHubHealthData = vi.mocked(fetchGitHubHealthData);
+const mockedFetchGitHubConnectionStatus = vi.mocked(fetchGitHubConnectionStatus);
 
 beforeEach(() => {
   mockedFetchGitHubHealthData.mockReset();
+  mockedFetchGitHubConnectionStatus.mockReset();
+  mockedFetchGitHubConnectionStatus.mockResolvedValue({
+    provider: "pat",
+    status: "connected",
+    isConnected: true,
+    canConnect: false,
+    hasInstallationId: false,
+    installUrlConfigured: false,
+    callbackRedirectConfigured: false,
+    message: "Server-side GitHub PAT authentication is configured."
+  });
 });
 
 describe("useGitHubHealthData", () => {
@@ -80,6 +98,28 @@ describe("useGitHubHealthData", () => {
       isEmpty: true,
       hasError: false
     });
+  });
+
+  it("surfaces GitHub App readiness without attempting a live health fetch", async () => {
+    mockedFetchGitHubConnectionStatus.mockResolvedValueOnce({
+      provider: "app",
+      status: "ready_to_connect",
+      isConnected: false,
+      canConnect: true,
+      hasInstallationId: false,
+      installUrlConfigured: true,
+      callbackRedirectConfigured: false,
+      message: "GitHub App is configured and ready to connect."
+    });
+
+    const { result } = renderHook(() => useGitHubHealthData());
+
+    await waitFor(() => {
+      expect(result.current.connection.status).toBe("ready_to_connect");
+    });
+
+    expect(result.current.state).toBe("empty");
+    expect(mockedFetchGitHubHealthData).not.toHaveBeenCalled();
   });
 });
 

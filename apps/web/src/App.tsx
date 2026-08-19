@@ -26,7 +26,9 @@ export function App() {
       onExploreUniverse={() => setScreen("repository-universe")}
       healthData={githubHealth.viewModels.commandCenter}
       activityState={githubHealth.commandCenterActivity}
+      connection={githubHealth.connection}
       integrationError={githubHealth.error}
+      onConnectGitHub={githubHealth.connectGitHub}
       onRetry={githubHealth.reload}
       recentActivity={githubHealth.viewModels.commandCenter.source === "mock" ? commandCenterActivityFeed : []}
     />

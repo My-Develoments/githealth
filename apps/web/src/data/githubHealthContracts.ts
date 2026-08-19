@@ -1,5 +1,7 @@
 export type GitHubSource = "mock" | "live";
 
+export type GitHubAuthProvider = "pat" | "app";
+
 export type GitHubFetchStatus = "complete" | "partial" | "failed";
 
 export type GitHubAdapterIssueCode =
@@ -107,4 +109,27 @@ export type GitHubHealthConfig = {
   apiBaseUrl: string;
   organization: string;
   source: GitHubSource;
+};
+
+export type GitHubConnectionState = "not_configured" | "ready_to_connect" | "connecting" | "connected" | "error";
+
+export type GitHubConnectionStatusResponse = {
+  provider: GitHubAuthProvider;
+  status: Exclude<GitHubConnectionState, "connecting">;
+  isConnected: boolean;
+  canConnect: boolean;
+  hasInstallationId: boolean;
+  installUrlConfigured: boolean;
+  callbackRedirectConfigured: boolean;
+  message: string;
+};
+
+export type GitHubConnectionStartResponse = {
+  provider: "app";
+  status: "ready_to_connect";
+  connectUrl: string;
+};
+
+export type GitHubConnectionViewModel = Omit<GitHubConnectionStatusResponse, "status"> & {
+  status: GitHubConnectionState;
 };

@@ -131,13 +131,13 @@ describe("App navigation", () => {
   it("navigates to placeholder screens and updates the active state", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/reports");
+      expect(window.location.pathname).toBe("/settings");
     });
 
-    expect(screen.getByRole("button", { name: "Reports" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBe("page");
   });
 
   it("preserves repository universe navigation", async () => {
@@ -241,5 +241,19 @@ describe("App navigation", () => {
     expect(screen.getByRole("heading", { name: "CI / CD Health" })).toBeTruthy();
     expect(screen.getByText("Delivery Summary")).toBeTruthy();
     expect(screen.getByText("Repository Delivery Context")).toBeTruthy();
+  });
+
+  it("renders the dedicated Reports screen for the reports route", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/reports");
+    });
+
+    expect(screen.getByRole("heading", { name: "Reports" })).toBeTruthy();
+    expect(screen.getByText("Executive Summary")).toBeTruthy();
+    expect(screen.getByText("Repository Health Context")).toBeTruthy();
   });
 });

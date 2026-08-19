@@ -1,6 +1,7 @@
-import { createPrivateKey, sign } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createPrivateKey, randomBytes, sign } from "node:crypto";
 import type { GitHubConfig } from "./config.js";
-import { GitHubAdapterError } from "./errors.js";
+import { getGitHubAppSessionToken } from "../../http/requestContext.js";
+import { GitHubAdapterError, normalizeGitHubHttpError } from "./errors.js";
 
 type CachedInstallationToken = {
   token: string;
@@ -15,7 +16,20 @@ type AppTokenDependencies = {
   now: () => number;
 };
 
+export type GitHubAppInstallation = {
+  installationId: number;
+  organization: string;
+  targetType: string;
+};
+
+export type GitHubAppInstallationSession = GitHubAppInstallation & {
+  issuedAtMs: number;
+  expiresAtMs: number;
+};
+
 const INSTALLATION_TOKEN_EXPIRY_SKEW_MS = 60_000;
+const INSTALLATION_SESSION_TOKEN_TTL_MS = 60 * 60 * 1000;
+const INSTALLATION_SESSION_TOKEN_PREFIX = "ghias1";
 const appInstallationTokenCache = new Map<string, AppTokenCacheEntry>();
 const installationTokenProvider = createInstallationTokenProvider();
 
@@ -25,6 +39,21 @@ function toBase64Url(value: string): string {
     .replace(/=/g, "")
     .replace(/\+/g, "-")
     .replace(/\//g, "_");
+}
+
+function toBase64UrlBuffer(value: Buffer): string {
+  return value
+    .toString("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+}
+
+function fromBase64Url(value: string): Buffer {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
+  const remainder = padded.length % 4;
+  const normalized = remainder === 0 ? padded : `${padded}${"=".repeat(4 - remainder)}`;
+  return Buffer.from(normalized, "base64");
 }
 
 function parseExpiryTimestamp(value: string): number {
@@ -96,7 +125,21 @@ async function requestInstallationToken(input: CreateInstallationTokenInput, now
     );
 
     if (!response.ok) {
-      throw new GitHubAdapterError("UPSTREAM_UNAVAILABLE", "Failed to create GitHub App installation token.", 503);
+      let message = "Failed to create GitHub App installation token.";
+
+      try {
+        const payload = (await response.json()) as { message?: string };
+        if (typeof payload.message === "string" && payload.message.trim().length > 0) {
+          message = payload.message;
+        }
+      } catch {
+        // Keep fallback message when response body is not valid JSON.
+      }
+
+      throw normalizeGitHubHttpError(response.status, message, {
+        headers: response.headers,
+        message
+      });
     }
 
     const payload = (await response.json()) as { token?: string; expires_at?: string };
@@ -123,6 +166,134 @@ function buildCacheKey(apiBaseUrl: string, appId: string, installationId: number
   return `${apiBaseUrl}:${appId}:${installationId}`;
 }
 
+function getAppConfig(config: GitHubConfig) {
+  if (config.authProvider !== "app" || !config.app) {
+    throw new GitHubAdapterError("AUTH_MISSING", "GitHub App configuration is unavailable.", 500);
+  }
+
+  return config.app;
+}
+
+function buildInstallationSessionKey(config: GitHubConfig): Buffer {
+  const appConfig = getAppConfig(config);
+  return createHash("sha256").update(appConfig.appId).update(":").update(appConfig.privateKey).digest();
+}
+
+function buildInstallationSessionToken(session: GitHubAppInstallationSession, config: GitHubConfig): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", buildInstallationSessionKey(config), iv);
+  const payload = Buffer.from(JSON.stringify(session), "utf8");
+  const encrypted = Buffer.concat([cipher.update(payload), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  return [
+    INSTALLATION_SESSION_TOKEN_PREFIX,
+    toBase64UrlBuffer(iv),
+    toBase64UrlBuffer(encrypted),
+    toBase64UrlBuffer(authTag)
+  ].join(".");
+}
+
+function parseInstallationSessionToken(token: string, config: GitHubConfig, nowMs: number): GitHubAppInstallationSession {
+  const [prefix, ivEncoded, payloadEncoded, authTagEncoded] = token.split(".");
+  if (
+    prefix !== INSTALLATION_SESSION_TOKEN_PREFIX ||
+    !ivEncoded ||
+    !payloadEncoded ||
+    !authTagEncoded
+  ) {
+    throw new GitHubAdapterError("AUTH_INVALID", "GitHub App installation session is invalid or expired.", 401);
+  }
+
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", buildInstallationSessionKey(config), fromBase64Url(ivEncoded));
+    decipher.setAuthTag(fromBase64Url(authTagEncoded));
+    const decrypted = Buffer.concat([decipher.update(fromBase64Url(payloadEncoded)), decipher.final()]);
+    const payload = JSON.parse(decrypted.toString("utf8")) as Partial<GitHubAppInstallationSession>;
+
+    if (
+      !Number.isInteger(payload.installationId) ||
+      (payload.installationId as number) <= 0 ||
+      typeof payload.organization !== "string" ||
+      payload.organization.trim().length === 0 ||
+      typeof payload.targetType !== "string" ||
+      payload.targetType.trim().length === 0 ||
+      !Number.isInteger(payload.issuedAtMs) ||
+      !Number.isInteger(payload.expiresAtMs)
+    ) {
+      throw new Error("Invalid payload");
+    }
+
+    if ((payload.expiresAtMs as number) <= nowMs) {
+      throw new GitHubAdapterError("AUTH_INVALID", "GitHub App installation session is invalid or expired.", 401);
+    }
+
+    return {
+      installationId: payload.installationId as number,
+      organization: payload.organization.trim(),
+      targetType: payload.targetType.trim(),
+      issuedAtMs: payload.issuedAtMs as number,
+      expiresAtMs: payload.expiresAtMs as number
+    };
+  } catch (error) {
+    if (error instanceof GitHubAdapterError) {
+      throw error;
+    }
+
+    throw new GitHubAdapterError("AUTH_INVALID", "GitHub App installation session is invalid or expired.", 401);
+  }
+}
+
+async function requestGitHubAppJson<T>(
+  config: GitHubConfig,
+  path: string,
+  method: "GET" | "POST" = "GET"
+): Promise<T> {
+  const appConfig = getAppConfig(config);
+  const jwt = createAppJwt(appConfig.appId, appConfig.privateKey, Date.now());
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+
+  try {
+    const response = await fetch(`${config.apiBaseUrl}${path}`, {
+      method,
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${jwt}`
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      let message = "GitHub App request failed.";
+
+      try {
+        const payload = (await response.json()) as { message?: string };
+        if (typeof payload.message === "string" && payload.message.trim().length > 0) {
+          message = payload.message;
+        }
+      } catch {
+        // Keep fallback message when error payload is not valid JSON.
+      }
+
+      throw normalizeGitHubHttpError(response.status, message, {
+        headers: response.headers,
+        message
+      });
+    }
+
+    return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof GitHubAdapterError) {
+      throw error;
+    }
+
+    throw new GitHubAdapterError("UPSTREAM_UNAVAILABLE", "GitHub App request failed.", 503);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export function resetGitHubAppInstallationTokenCache(): void {
   appInstallationTokenCache.clear();
 }
@@ -147,6 +318,73 @@ export function createInstallationTokenProvider(dependencies: Partial<AppTokenDe
   };
 }
 
+export async function fetchGitHubAppInstallation(
+  config: GitHubConfig,
+  installationId: number
+): Promise<GitHubAppInstallation> {
+  const payload = await requestGitHubAppJson<{
+    id?: number;
+    target_type?: string;
+    account?: { login?: string };
+  }>(config, `/app/installations/${installationId}`);
+
+  if (
+    !Number.isInteger(payload.id) ||
+    typeof payload.target_type !== "string" ||
+    typeof payload.account?.login !== "string" ||
+    payload.account.login.trim().length === 0
+  ) {
+    throw new GitHubAdapterError("INVALID_RESPONSE", "GitHub App installation response was invalid.", 502);
+  }
+
+  const resolvedInstallationId = payload.id as number;
+
+  return {
+    installationId: resolvedInstallationId,
+    organization: payload.account.login.trim(),
+    targetType: payload.target_type.trim()
+  };
+}
+
+export function createGitHubAppInstallationSession(
+  config: GitHubConfig,
+  installation: GitHubAppInstallation,
+  dependencies: Partial<AppTokenDependencies> = {}
+): string {
+  const now = dependencies.now ?? (() => Date.now());
+  const issuedAtMs = now();
+
+  return buildInstallationSessionToken(
+    {
+      ...installation,
+      issuedAtMs,
+      expiresAtMs: issuedAtMs + INSTALLATION_SESSION_TOKEN_TTL_MS
+    },
+    config
+  );
+}
+
+export function parseGitHubAppInstallationSession(
+  config: GitHubConfig,
+  token: string,
+  dependencies: Partial<AppTokenDependencies> = {}
+): GitHubAppInstallationSession {
+  const now = dependencies.now ?? (() => Date.now());
+  return parseInstallationSessionToken(token, config, now());
+}
+
+export function getCurrentGitHubAppInstallationSession(
+  config: GitHubConfig,
+  dependencies: Partial<AppTokenDependencies> = {}
+): GitHubAppInstallationSession | undefined {
+  const token = getGitHubAppSessionToken();
+  if (!token) {
+    return undefined;
+  }
+
+  return parseGitHubAppInstallationSession(config, token, dependencies);
+}
+
 export async function resolveGitHubAccessToken(config: GitHubConfig): Promise<string> {
   if (config.authProvider === "pat") {
     if (config.token) {
@@ -161,10 +399,11 @@ export async function resolveGitHubAccessToken(config: GitHubConfig): Promise<st
     throw new GitHubAdapterError("AUTH_MISSING", "GitHub App configuration is unavailable.", 500);
   }
 
-  if (!appConfig.installationId) {
+  const installationId = appConfig.installationId ?? getCurrentGitHubAppInstallationSession(config)?.installationId;
+  if (!installationId) {
     throw new GitHubAdapterError(
       "AUTH_MISSING",
-      "GitHub App installation is not connected. Complete app installation and set GITHUB_APP_INSTALLATION_ID.",
+      "GitHub App installation is not connected. Complete GitHub App installation to continue.",
       401
     );
   }
@@ -173,7 +412,7 @@ export async function resolveGitHubAccessToken(config: GitHubConfig): Promise<st
     apiBaseUrl: config.apiBaseUrl,
     appId: appConfig.appId,
     privateKey: appConfig.privateKey,
-    installationId: appConfig.installationId,
+    installationId,
     timeoutMs: config.timeoutMs
   });
 }

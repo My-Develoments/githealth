@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createInstallationTokenProvider, resetGitHubAppInstallationTokenCache, resolveGitHubAccessToken } from "./appAuth.js";
+import {
+  createGitHubAppInstallationSession,
+  createInstallationTokenProvider,
+  parseGitHubAppInstallationSession,
+  resetGitHubAppInstallationTokenCache,
+  resolveGitHubAccessToken
+} from "./appAuth.js";
 import type { GitHubConfig } from "./config.js";
 
 afterEach(() => {
@@ -92,6 +98,46 @@ describe("resolveGitHubAccessToken", () => {
     };
 
     await expect(resolveGitHubAccessToken(config)).resolves.toBe("test-token");
+  });
+});
+
+describe("GitHub App installation session", () => {
+  it("creates and parses an opaque installation session token", () => {
+    const config: GitHubConfig = {
+      authProvider: "app",
+      app: {
+        appId: "12345",
+        privateKey: TEST_PRIVATE_KEY,
+        installUrl: "https://github.com/apps/githealth/installations/new"
+      },
+      apiBaseUrl: "https://api.github.com",
+      timeoutMs: 5000,
+      maxRetries: 0,
+      retryBaseDelayMs: 100,
+      maxPaginationPages: 3,
+      repositoryConcurrency: 4,
+      signalConcurrency: 2
+    };
+
+    const token = createGitHubAppInstallationSession(
+      config,
+      {
+        installationId: 77,
+        organization: "githealth-labs",
+        targetType: "Organization"
+      },
+      { now: () => Date.parse("2026-01-01T00:00:00.000Z") }
+    );
+
+    expect(token).not.toContain("77");
+    expect(token).not.toContain("githealth-labs");
+    expect(
+      parseGitHubAppInstallationSession(config, token, { now: () => Date.parse("2026-01-01T00:10:00.000Z") })
+    ).toMatchObject({
+      installationId: 77,
+      organization: "githealth-labs",
+      targetType: "Organization"
+    });
   });
 });
 

@@ -4,6 +4,8 @@ import {
   getGitHubRepositoryScoreById,
   getGitHubRepositoryScores
 } from "../application/githubScoringService.js";
+import { getCurrentGitHubAppInstallationSession } from "../infrastructure/github/appAuth.js";
+import { getGitHubConfig } from "../infrastructure/github/config.js";
 import { GitHubAdapterError } from "../infrastructure/github/errors.js";
 import type { GitHubSource } from "../application/githubNormalizedModels.js";
 import { sendApiError } from "./errorEnvelope.js";
@@ -90,6 +92,33 @@ function enforceLiveRequestProtection(
 
   if (!authorizeGitHubOrganizationForSource(organization, source, res)) {
     return false;
+  }
+
+  try {
+    const config = getGitHubConfig();
+    const installationSession = getCurrentGitHubAppInstallationSession(config);
+    if (
+      installationSession &&
+      installationSession.organization.trim().toLowerCase() !== organization.trim().toLowerCase()
+    ) {
+      sendApiError(res, {
+        status: 403,
+        code: "PERMISSION_DENIED",
+        message: "GitHub App installation is not authorized for the requested organization."
+      });
+      return false;
+    }
+  } catch (error) {
+    if (error instanceof GitHubAdapterError) {
+      sendApiError(res, {
+        status: error.status,
+        code: error.code,
+        message: error.message
+      });
+      return false;
+    }
+
+    throw error;
   }
 
   return true;

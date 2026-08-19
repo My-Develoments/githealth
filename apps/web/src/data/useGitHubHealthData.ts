@@ -36,6 +36,82 @@ type UseGitHubHealthDataResult = {
   connectGitHub: () => Promise<void>;
 };
 
+type GitHubAppCallbackResult = {
+  status: Extract<GitHubConnectionViewModel["status"], "installation_completed" | "ready_to_connect" | "unauthorized_installation" | "error">;
+  message?: string;
+  sessionToken?: string;
+  errorCode?: string;
+};
+
+const GITHUB_APP_SESSION_STORAGE_KEY = "githealth.githubAppSession";
+const GITHUB_APP_CALLBACK_QUERY_KEYS = [
+  "github_app_callback",
+  "github_app_status",
+  "github_app_session",
+  "github_app_message",
+  "github_app_error_code",
+  "github_app_setup_action"
+] as const;
+
+function isCallbackStatus(value: string | null): value is GitHubAppCallbackResult["status"] {
+  return value === "installation_completed" || value === "ready_to_connect" || value === "unauthorized_installation" || value === "error";
+}
+
+function readStoredGitHubAppSession(): string | undefined {
+  try {
+    const value = window.sessionStorage.getItem(GITHUB_APP_SESSION_STORAGE_KEY);
+    return value && value.trim().length > 0 ? value.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeStoredGitHubAppSession(token: string | undefined): void {
+  try {
+    if (!token || token.trim().length === 0) {
+      window.sessionStorage.removeItem(GITHUB_APP_SESSION_STORAGE_KEY);
+      return;
+    }
+
+    window.sessionStorage.setItem(GITHUB_APP_SESSION_STORAGE_KEY, token.trim());
+  } catch {
+    // Ignore storage availability issues in constrained environments.
+  }
+}
+
+function consumeGitHubAppCallbackResult(): GitHubAppCallbackResult | undefined {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("github_app_callback") !== "received") {
+    return undefined;
+  }
+
+  const statusValue = url.searchParams.get("github_app_status");
+  const status = isCallbackStatus(statusValue) ? statusValue : "error";
+  const sessionToken = url.searchParams.get("github_app_session") ?? undefined;
+  const message = url.searchParams.get("github_app_message") ?? undefined;
+  const errorCode = url.searchParams.get("github_app_error_code") ?? undefined;
+
+  if (sessionToken) {
+    writeStoredGitHubAppSession(sessionToken);
+  } else if (status === "error" || status === "unauthorized_installation" || status === "ready_to_connect") {
+    writeStoredGitHubAppSession(undefined);
+  }
+
+  for (const key of GITHUB_APP_CALLBACK_QUERY_KEYS) {
+    url.searchParams.delete(key);
+  }
+
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  window.history.replaceState(window.history.state, document.title, nextUrl);
+
+  return {
+    status,
+    sessionToken,
+    message,
+    errorCode
+  };
+}
+
 function createInitialConnectionState(source: "live" | "mock"): GitHubConnectionViewModel {
   if (source === "mock") {
     return {
@@ -152,28 +228,80 @@ export function useGitHubHealthData(): UseGitHubHealthDataResult {
   useEffect(() => {
     const controller = new AbortController();
     const source = resolveGitHubHealthConfig().source;
+    const callbackResult = source === "live" ? consumeGitHubAppCallbackResult() : undefined;
+    const installationSession = source === "live"
+      ? callbackResult?.sessionToken ?? readStoredGitHubAppSession()
+      : undefined;
     setState("loading");
     setError(null);
     setConnection(createInitialConnectionState(source));
 
     void (async () => {
       if (source === "live") {
+        if (callbackResult?.status === "installation_completed") {
+          setConnection({
+            provider: "app",
+            status: "installation_completed",
+            isConnected: false,
+            canConnect: true,
+            hasInstallationId: true,
+            installUrlConfigured: true,
+            callbackRedirectConfigured: true,
+            message: callbackResult.message || "GitHub App installation completed. Finalizing connection."
+          });
+        }
+
+        if (callbackResult && !callbackResult.sessionToken && callbackResult.status !== "installation_completed") {
+          setConnection({
+            provider: "app",
+            status: callbackResult.status,
+            isConnected: false,
+            canConnect: callbackResult.status === "ready_to_connect",
+            hasInstallationId: false,
+            installUrlConfigured: true,
+            callbackRedirectConfigured: true,
+            message: callbackResult.message || "GitHub App onboarding did not complete successfully."
+          });
+          setState(callbackResult.status === "ready_to_connect" ? "empty" : "error");
+          setError(
+            callbackResult.status === "ready_to_connect"
+              ? null
+              : {
+                  code: callbackResult.errorCode || (callbackResult.status === "unauthorized_installation" ? "PERMISSION_DENIED" : "UPSTREAM_UNAVAILABLE"),
+                  message: callbackResult.message || "GitHub App onboarding did not complete successfully.",
+                  status: callbackResult.status === "unauthorized_installation" ? 403 : 400
+                }
+          );
+          return;
+        }
+
         try {
-          const nextConnection = await fetchGitHubConnectionStatus(controller.signal);
+          const nextConnection = await fetchGitHubConnectionStatus({
+            signal: controller.signal,
+            installationSession
+          });
           if (controller.signal.aborted) {
             return;
           }
 
           setConnection(nextConnection);
 
+          if ((nextConnection.status === "unauthorized_installation" || nextConnection.status === "error") && installationSession) {
+            writeStoredGitHubAppSession(undefined);
+          }
+
           if (nextConnection.provider === "app" && !nextConnection.isConnected) {
             setViewModels(createDefaultViewModels("live"));
-            setState(nextConnection.status === "error" ? "error" : "empty");
-            if (nextConnection.status === "error") {
+            setState(
+              nextConnection.status === "error" || nextConnection.status === "unauthorized_installation"
+                ? "error"
+                : "empty"
+            );
+            if (nextConnection.status === "error" || nextConnection.status === "unauthorized_installation") {
               setError({
-                code: "AUTH_INVALID",
+                code: nextConnection.status === "unauthorized_installation" ? "PERMISSION_DENIED" : "AUTH_INVALID",
                 message: nextConnection.message,
-                status: 503
+                status: nextConnection.status === "unauthorized_installation" ? 403 : 503
               });
             }
             return;
@@ -204,18 +332,29 @@ export function useGitHubHealthData(): UseGitHubHealthDataResult {
         }
       }
 
-      const result = await fetchGitHubHealthData(controller.signal);
+      const result = await fetchGitHubHealthData(controller.signal, installationSession);
       if (controller.signal.aborted) {
         return;
       }
 
       if (result.state === "error") {
+        if (installationSession) {
+          writeStoredGitHubAppSession(undefined);
+        }
         setState("error");
         setError(result.error);
         return;
       }
 
       setViewModels(mapGitHubHealthToViewModels(result.data));
+      if (callbackResult?.status === "installation_completed") {
+        setConnection((current) => ({
+          ...current,
+          status: "connected",
+          isConnected: true,
+          message: "GitHub App installation completed and connection is ready."
+        }));
+      }
       setState(result.state);
     })();
 
@@ -229,6 +368,7 @@ export function useGitHubHealthData(): UseGitHubHealthDataResult {
   }, []);
 
   const connectGitHub = useCallback(async () => {
+    writeStoredGitHubAppSession(undefined);
     setConnection((current) => ({
       ...current,
       provider: "app",

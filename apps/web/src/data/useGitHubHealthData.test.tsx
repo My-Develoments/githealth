@@ -17,10 +17,13 @@ import { fetchGitHubConnectionStatus } from "./githubConnectionDataAdapter";
 
 const mockedFetchGitHubHealthData = vi.mocked(fetchGitHubHealthData);
 const mockedFetchGitHubConnectionStatus = vi.mocked(fetchGitHubConnectionStatus);
+const GITHUB_APP_SESSION_STORAGE_KEY = "githealth.githubAppSession";
 
 beforeEach(() => {
   mockedFetchGitHubHealthData.mockReset();
   mockedFetchGitHubConnectionStatus.mockReset();
+  window.sessionStorage.clear();
+  window.history.replaceState({}, "", "/");
   mockedFetchGitHubConnectionStatus.mockResolvedValue({
     provider: "pat",
     status: "connected",
@@ -119,6 +122,61 @@ describe("useGitHubHealthData", () => {
     });
 
     expect(result.current.state).toBe("empty");
+    expect(mockedFetchGitHubHealthData).not.toHaveBeenCalled();
+  });
+
+  it("consumes callback completion, stores the opaque session token, and finishes connected", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/?github_app_callback=received&github_app_status=installation_completed&github_app_session=opaque-session&github_app_message=Installed"
+    );
+    mockedFetchGitHubConnectionStatus.mockResolvedValueOnce({
+      provider: "app",
+      status: "connected",
+      isConnected: true,
+      canConnect: true,
+      hasInstallationId: true,
+      installUrlConfigured: true,
+      callbackRedirectConfigured: true,
+      message: "GitHub App installation is connected."
+    });
+    mockedFetchGitHubHealthData.mockResolvedValueOnce(successResult("ready"));
+
+    const { result } = renderHook(() => useGitHubHealthData());
+
+    await waitFor(() => {
+      expect(result.current.connection.status).toBe("connected");
+    });
+
+    expect(window.sessionStorage.getItem(GITHUB_APP_SESSION_STORAGE_KEY)).toBe("opaque-session");
+    expect(mockedFetchGitHubConnectionStatus.mock.calls[0]?.[0]).toEqual({
+      signal: expect.any(AbortSignal),
+      installationSession: "opaque-session"
+    });
+    expect(window.location.search).toBe("");
+  });
+
+  it("surfaces callback authorization errors without calling live health fetch", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/?github_app_callback=received&github_app_status=unauthorized_installation&github_app_error_code=PERMISSION_DENIED&github_app_message=Unauthorized"
+    );
+
+    const { result } = renderHook(() => useGitHubHealthData());
+
+    await waitFor(() => {
+      expect(result.current.connection.status).toBe("unauthorized_installation");
+    });
+
+    expect(result.current.state).toBe("error");
+    expect(result.current.error).toEqual({
+      code: "PERMISSION_DENIED",
+      message: "Unauthorized",
+      status: 403
+    });
+    expect(mockedFetchGitHubConnectionStatus).not.toHaveBeenCalled();
     expect(mockedFetchGitHubHealthData).not.toHaveBeenCalled();
   });
 });

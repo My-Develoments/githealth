@@ -31,6 +31,32 @@ describe("requestJson", () => {
     });
   });
 
+  it("merges custom request headers with the API bearer token", async () => {
+    vi.stubEnv("VITE_API_AUTH_TOKEN", "test-api-token");
+
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json"
+        }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requestJson<{ ok: boolean }>("https://api.example.com/health", {
+      headers: {
+        "x-github-app-session": "opaque-install-session"
+      }
+    });
+
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
+      Accept: "application/json",
+      Authorization: "Bearer test-api-token",
+      "x-github-app-session": "opaque-install-session"
+    });
+  });
+
   it("keeps the request unauthenticated when no token is configured", async () => {
     vi.stubEnv("VITE_API_AUTH_TOKEN", "");
 

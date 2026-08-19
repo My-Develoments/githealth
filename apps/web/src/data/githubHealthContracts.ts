@@ -111,7 +111,14 @@ export type GitHubHealthConfig = {
   source: GitHubSource;
 };
 
-export type GitHubConnectionState = "not_configured" | "ready_to_connect" | "connecting" | "connected" | "error";
+export type GitHubConnectionState =
+  | "not_configured"
+  | "ready_to_connect"
+  | "installation_completed"
+  | "connecting"
+  | "connected"
+  | "unauthorized_installation"
+  | "error";
 
 export type GitHubConnectionStatusResponse = {
   provider: GitHubAuthProvider;

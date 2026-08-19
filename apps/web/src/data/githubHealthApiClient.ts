@@ -17,11 +17,13 @@ export class GitHubHealthApiError extends Error {
 
 export type RequestJsonOptions = {
   signal?: AbortSignal;
+  headers?: Record<string, string>;
 };
 
-function buildRequestHeaders(): HeadersInit {
+function buildRequestHeaders(extraHeaders?: Record<string, string>): HeadersInit {
   const headers: HeadersInit = {
-    Accept: "application/json"
+    Accept: "application/json",
+    ...(extraHeaders ?? {})
   };
 
   const token = import.meta.env.VITE_API_AUTH_TOKEN;
@@ -41,7 +43,7 @@ export async function requestJson<T>(url: string, options: RequestJsonOptions = 
   try {
     response = await fetch(url, {
       method: "GET",
-      headers: buildRequestHeaders(),
+      headers: buildRequestHeaders(options.headers),
       signal: options.signal
     });
   } catch {

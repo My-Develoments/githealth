@@ -1,8 +1,14 @@
-import { resolveGitHubAccessToken } from "./appAuth.js";
+import { getCurrentGitHubAppInstallationSession, resolveGitHubAccessToken } from "./appAuth.js";
 import { getGitHubConfig, type GitHubAuthProvider } from "./config.js";
 import { GitHubAdapterError } from "./errors.js";
 
-export type GitHubConnectionState = "not_configured" | "ready_to_connect" | "connected" | "error";
+export type GitHubConnectionState =
+  | "not_configured"
+  | "ready_to_connect"
+  | "installation_completed"
+  | "connected"
+  | "unauthorized_installation"
+  | "error";
 
 export type GitHubConnectionStatusResponse = {
   provider: GitHubAuthProvider;
@@ -47,7 +53,8 @@ export async function getGitHubConnectionStatus(): Promise<GitHubConnectionStatu
     };
   }
 
-  const hasInstallationId = typeof appConfig.installationId === "number";
+  const requestSession = getCurrentGitHubAppInstallationSession(config);
+  const hasInstallationId = typeof appConfig.installationId === "number" || typeof requestSession?.installationId === "number";
   const installUrlConfigured = typeof appConfig.installUrl === "string";
   const callbackRedirectConfigured = typeof appConfig.onboardingRedirectUrl === "string";
 
@@ -81,9 +88,14 @@ export async function getGitHubConnectionStatus(): Promise<GitHubConnectionStatu
     };
   } catch (error) {
     if (error instanceof GitHubAdapterError) {
+      const state =
+        error.code === "AUTH_INVALID" || error.code === "PERMISSION_DENIED" || error.code === "NOT_FOUND"
+          ? "unauthorized_installation"
+          : "error";
+
       return {
         provider: "app",
-        status: "error",
+        status: state,
         isConnected: false,
         canConnect: installUrlConfigured,
         hasInstallationId,

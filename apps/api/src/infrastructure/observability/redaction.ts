@@ -1,6 +1,7 @@
 const SECRET_KEYS = [
   "authorization",
   "token",
+  "session",
   "secret",
   "password",
   "apiKey"

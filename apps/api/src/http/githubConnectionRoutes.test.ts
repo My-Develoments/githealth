@@ -53,6 +53,7 @@ describe("githubConnectionRoutes", () => {
   const previousAppInstallUrl = process.env.GITHUB_APP_INSTALL_URL;
   const previousAppInstallationId = process.env.GITHUB_APP_INSTALLATION_ID;
   const previousAppRedirectUrl = process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL;
+  const previousAllowedGitHubOrgs = process.env.ALLOWED_GITHUB_ORGS;
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -65,6 +66,7 @@ describe("githubConnectionRoutes", () => {
     restoreEnv("GITHUB_APP_INSTALL_URL", previousAppInstallUrl);
     restoreEnv("GITHUB_APP_INSTALLATION_ID", previousAppInstallationId);
     restoreEnv("GITHUB_APP_ONBOARDING_REDIRECT_URL", previousAppRedirectUrl);
+    restoreEnv("ALLOWED_GITHUB_ORGS", previousAllowedGitHubOrgs);
   });
 
   function authHeaders(token = "issue36-token") {
@@ -79,6 +81,14 @@ describe("githubConnectionRoutes", () => {
     process.env.GITHUB_APP_ID = "12345";
     process.env.GITHUB_APP_PRIVATE_KEY = TEST_PRIVATE_KEY;
     process.env.GITHUB_APP_INSTALL_URL = "https://github.com/apps/githealth/installations/new";
+    process.env.ALLOWED_GITHUB_ORGS = "githealth-labs";
+  }
+
+  function installSessionHeaders(token: string) {
+    return {
+      ...authHeaders(),
+      "x-github-app-session": token
+    };
   }
 
   it("returns ready_to_connect when app mode is configured without installation id", async () => {
@@ -115,15 +125,189 @@ describe("githubConnectionRoutes", () => {
     configureAppMode();
     process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL = "http://localhost:5173";
 
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.startsWith("http://127.0.0.1")) {
+        return originalFetch(input, init);
+      }
+
+      return new Response(
+        JSON.stringify({
+          id: 77,
+          target_type: "Organization",
+          account: {
+            login: "githealth-labs"
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
     await withServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/github/connection/callback?installation_id=77&setup_action=install`, {
         redirect: "manual"
       });
+      const location = response.headers.get("location");
+      const redirectUrl = new URL(location ?? "http://localhost:5173");
 
       expect(response.status).toBe(302);
-      expect(response.headers.get("location")).toBe(
-        "http://localhost:5173/?github_app_status=connected&github_app_callback=received&github_app_setup_action=install"
+      expect(redirectUrl.origin).toBe("http://localhost:5173");
+      expect(redirectUrl.searchParams.get("github_app_status")).toBe("installation_completed");
+      expect(redirectUrl.searchParams.get("github_app_callback")).toBe("received");
+      expect(redirectUrl.searchParams.get("github_app_setup_action")).toBe("install");
+      expect(redirectUrl.searchParams.get("github_app_session")).toBeTruthy();
+    });
+  });
+
+  it("completes callback and allows protected status to use the returned session token", async () => {
+    configureAppMode();
+
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.startsWith("http://127.0.0.1")) {
+        return originalFetch(input, init);
+      }
+
+      if (url.endsWith("/app/installations/77")) {
+        return new Response(
+          JSON.stringify({
+            id: 77,
+            target_type: "Organization",
+            account: {
+              login: "githealth-labs"
+            }
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        );
+      }
+
+      if (url.endsWith("/app/installations/77/access_tokens")) {
+        return new Response(
+          JSON.stringify({ token: "installation-access-token", expires_at: "2026-01-01T01:00:00.000Z" }),
+          {
+            status: 201,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        );
+      }
+
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await withServer(async (baseUrl) => {
+      const callbackResponse = await fetch(`${baseUrl}/github/connection/callback?installation_id=77&setup_action=install`);
+      const callbackBody = await callbackResponse.json() as { status: string; sessionToken: string };
+
+      expect(callbackResponse.status).toBe(200);
+      expect(callbackBody.status).toBe("installation_completed");
+      expect(callbackBody.sessionToken).toBeTruthy();
+
+      const statusResponse = await fetch(`${baseUrl}/github/connection/status`, {
+        headers: installSessionHeaders(callbackBody.sessionToken)
+      });
+      const statusBody = await statusResponse.json() as { status: string; isConnected: boolean };
+
+      expect(statusResponse.status).toBe(200);
+      expect(statusBody.status).toBe("connected");
+      expect(statusBody.isConnected).toBe(true);
+    });
+  });
+
+  it("returns a callback error when installation_id is missing", async () => {
+    configureAppMode();
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/github/connection/callback?setup_action=install`);
+      const body = await response.json() as { code: string; message: string };
+
+      expect(response.status).toBe(400);
+      expect(body.code).toBe("INVALID_REQUEST");
+      expect(body.message).toBe("Missing or invalid installation_id query parameter.");
+    });
+  });
+
+  it("returns a callback error when installation_id is invalid", async () => {
+    configureAppMode();
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/github/connection/callback?installation_id=abc&setup_action=install`);
+      const body = await response.json() as { code: string; message: string };
+
+      expect(response.status).toBe(400);
+      expect(body.code).toBe("INVALID_REQUEST");
+      expect(body.message).toBe("Missing or invalid installation_id query parameter.");
+    });
+  });
+
+  it("rejects installations for unauthorized organizations", async () => {
+    configureAppMode();
+
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.startsWith("http://127.0.0.1")) {
+        return originalFetch(input, init);
+      }
+
+      return new Response(
+        JSON.stringify({
+          id: 88,
+          target_type: "Organization",
+          account: {
+            login: "other-org"
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
       );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/github/connection/callback?installation_id=88&setup_action=install`);
+      const body = await response.json() as { code: string; message: string };
+
+      expect(response.status).toBe(403);
+      expect(body.code).toBe("PERMISSION_DENIED");
+      expect(body.message).toBe("GitHub App installation organization is not authorized for GitHealth.");
+    });
+  });
+
+  it("preserves PAT mode status behavior", async () => {
+    process.env.API_AUTH_TOKEN = "issue36-token";
+    process.env.GITHUB_AUTH_PROVIDER = "pat";
+    process.env.GITHUB_TOKEN = "pat-token";
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/github/connection/status`, {
+        headers: authHeaders()
+      });
+      const body = await response.json() as { provider: string; status: string; isConnected: boolean };
+
+      expect(response.status).toBe(200);
+      expect(body.provider).toBe("pat");
+      expect(body.status).toBe("connected");
+      expect(body.isConnected).toBe(true);
     });
   });
 });

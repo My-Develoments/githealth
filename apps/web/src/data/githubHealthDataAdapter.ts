@@ -36,15 +36,26 @@ export type GitHubHealthAdapterFailure = {
 
 export type GitHubHealthAdapterResult = GitHubHealthAdapterSuccess | GitHubHealthAdapterFailure;
 
-export async function fetchGitHubHealthData(signal?: AbortSignal): Promise<GitHubHealthAdapterResult> {
+function buildInstallationSessionHeaders(installationSession: string | undefined): Record<string, string> | undefined {
+  if (!installationSession || installationSession.trim().length === 0) {
+    return undefined;
+  }
+
+  return {
+    "x-github-app-session": installationSession.trim()
+  };
+}
+
+export async function fetchGitHubHealthData(signal?: AbortSignal, installationSession?: string): Promise<GitHubHealthAdapterResult> {
   const config = resolveGitHubHealthConfig();
   const organizationUrl = buildEndpoint(config.apiBaseUrl, "/health-score/github/organization", config.organization, config.source);
   const repositoriesUrl = buildEndpoint(config.apiBaseUrl, "/health-score/github/repositories", config.organization, config.source);
+  const headers = buildInstallationSessionHeaders(installationSession);
 
   try {
     const [organizationResponse, repositoriesResponse] = await Promise.all([
-      requestJson<GitHubOrganizationScoreResponse>(organizationUrl, { signal }),
-      requestJson<GitHubRepositoryScoresResponse>(repositoriesUrl, { signal })
+      requestJson<GitHubOrganizationScoreResponse>(organizationUrl, { signal, headers }),
+      requestJson<GitHubRepositoryScoresResponse>(repositoriesUrl, { signal, headers })
     ]);
 
     const fetchStatus = mergeFetchStatus(organizationResponse.fetchStatus, repositoriesResponse.fetchStatus);

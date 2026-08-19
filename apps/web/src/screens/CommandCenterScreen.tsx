@@ -25,11 +25,15 @@ function resolveConnectionTone(status: GitHubConnectionViewModel["status"]): "he
     return "healthy";
   }
 
+  if (status === "installation_completed") {
+    return "healthy";
+  }
+
   if (status === "ready_to_connect" || status === "connecting") {
     return "neutral";
   }
 
-  if (status === "error") {
+  if (status === "error" || status === "unauthorized_installation") {
     return "critical";
   }
 
@@ -45,8 +49,16 @@ function resolveConnectionLabel(connection: GitHubConnectionViewModel): string {
     return "Ready to connect";
   }
 
+  if (connection.status === "installation_completed") {
+    return "Installation completed";
+  }
+
   if (connection.status === "connecting") {
     return "Connecting";
+  }
+
+  if (connection.status === "unauthorized_installation") {
+    return "Unauthorized installation";
   }
 
   if (connection.status === "connected") {
@@ -856,13 +868,17 @@ export function CommandCenterScreen({
             <Heading as="h3" size="sm">
               Error Recovery
             </Heading>
-            {resolvedActivity.hasError || resolvedConnection.status === "error" ? (
+            {resolvedActivity.hasError || resolvedConnection.status === "error" || resolvedConnection.status === "unauthorized_installation" ? (
               <>
                 <Text size="sm" tone="secondary">
-                  {resolvedConnection.status === "error" ? "GitHub connection setup needs attention." : errorGuidance.title}
+                  {resolvedConnection.status === "error" || resolvedConnection.status === "unauthorized_installation"
+                    ? "GitHub connection setup needs attention."
+                    : errorGuidance.title}
                 </Text>
                 <Text size="sm" tone="muted">
-                  {resolvedConnection.status === "error" ? resolvedConnection.message : errorGuidance.action}
+                  {resolvedConnection.status === "error" || resolvedConnection.status === "unauthorized_installation"
+                    ? resolvedConnection.message
+                    : errorGuidance.action}
                 </Text>
                 <Button variant="secondary" size="sm" onClick={onRetry} aria-label="Retry health check">
                   Retry Check

@@ -7,6 +7,9 @@ import {
 import { GitHubAdapterError } from "../infrastructure/github/errors.js";
 import type { GitHubSource } from "../application/githubNormalizedModels.js";
 import { sendApiError } from "./errorEnvelope.js";
+import { githubEndpointAuth } from "./githubEndpointAuth.js";
+import { authorizeGitHubOrganizationForSource } from "./githubEndpointOrgAuthorization.js";
+import { githubEndpointRateLimit } from "./githubEndpointRateLimit.js";
 
 export const githubHealthScoreRoutes = Router();
 
@@ -54,6 +57,44 @@ function handleIntegrationError(error: unknown, res: Response) {
   });
 }
 
+function runMiddleware(
+  middleware: (req: Parameters<typeof githubEndpointAuth>[0], res: Parameters<typeof githubEndpointAuth>[1], next: Parameters<typeof githubEndpointAuth>[2]) => void,
+  req: Parameters<typeof githubEndpointAuth>[0],
+  res: Parameters<typeof githubEndpointAuth>[1]
+): boolean {
+  let proceeded = false;
+  middleware(req, res, () => {
+    proceeded = true;
+  });
+
+  return proceeded;
+}
+
+function enforceLiveRequestProtection(
+  req: Parameters<typeof githubEndpointAuth>[0],
+  res: Parameters<typeof githubEndpointAuth>[1],
+  organization: string,
+  source: GitHubSource | undefined
+): boolean {
+  if (source === "mock") {
+    return true;
+  }
+
+  if (!runMiddleware(githubEndpointRateLimit, req, res)) {
+    return false;
+  }
+
+  if (!runMiddleware(githubEndpointAuth, req, res)) {
+    return false;
+  }
+
+  if (!authorizeGitHubOrganizationForSource(organization, source, res)) {
+    return false;
+  }
+
+  return true;
+}
+
 githubHealthScoreRoutes.get("/organization", async (req, res) => {
   const organization = resolveOrgQuery(req.query.org);
   if (!organization) {
@@ -72,6 +113,10 @@ githubHealthScoreRoutes.get("/organization", async (req, res) => {
       code: "INVALID_REQUEST",
       message: "Invalid source query parameter."
     });
+    return;
+  }
+
+  if (!enforceLiveRequestProtection(req, res, organization, source)) {
     return;
   }
 
@@ -104,6 +149,10 @@ githubHealthScoreRoutes.get("/repositories", async (req, res) => {
     return;
   }
 
+  if (!enforceLiveRequestProtection(req, res, organization, source)) {
+    return;
+  }
+
   try {
     const result = await getGitHubRepositoryScores(organization, source);
     res.json(result);
@@ -130,6 +179,10 @@ githubHealthScoreRoutes.get("/repositories/:id", async (req, res) => {
       code: "INVALID_REQUEST",
       message: "Invalid source query parameter."
     });
+    return;
+  }
+
+  if (!enforceLiveRequestProtection(req, res, organization, source)) {
     return;
   }
 

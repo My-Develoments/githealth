@@ -11,12 +11,15 @@ function restoreEnv(name: string, previous: string | undefined): void {
 
 describe("startup bootstrap", () => {
   const previousPort = process.env.PORT;
+  const previousApiAuthToken = process.env.API_AUTH_TOKEN;
 
   afterEach(() => {
     restoreEnv("PORT", previousPort);
+    restoreEnv("API_AUTH_TOKEN", previousApiAuthToken);
   });
 
   it("fails clearly when startup configuration is invalid", async () => {
+    process.env.API_AUTH_TOKEN = "issue23-token";
     process.env.PORT = "-1";
     vi.resetModules();
 

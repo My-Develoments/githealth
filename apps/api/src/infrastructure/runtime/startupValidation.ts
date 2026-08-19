@@ -1,4 +1,5 @@
 import { getGitHubConfig } from "../github/config.js";
+import { getApiProtectionConfig } from "../security/apiProtectionConfig.js";
 
 export function validateStartupConfiguration(): void {
   const rawPort = process.env.PORT;
@@ -11,4 +12,7 @@ export function validateStartupConfiguration(): void {
 
   // Validate GitHub configuration format deterministically at startup.
   getGitHubConfig();
+
+  // Validate API protection configuration deterministically at startup.
+  getApiProtectionConfig();
 }

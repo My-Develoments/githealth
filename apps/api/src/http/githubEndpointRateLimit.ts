@@ -58,6 +58,31 @@ function pruneExpiredEntries(entries: Map<string, RateLimitWindowState>, now: nu
   }
 }
 
+function toEpochSeconds(timestampMs: number): number {
+  return Math.floor(timestampMs / 1000);
+}
+
+function computeRetryAfterSeconds(resetAtMs: number, nowMs: number): number {
+  const remainingMs = Math.max(0, resetAtMs - nowMs);
+  return Math.max(1, Math.ceil(remainingMs / 1000));
+}
+
+function applyRateLimitHeaders(
+  res: Response,
+  limit: number,
+  remaining: number,
+  resetAtMs: number,
+  retryAfterSeconds?: number
+): void {
+  res.setHeader("X-RateLimit-Limit", String(limit));
+  res.setHeader("X-RateLimit-Remaining", String(Math.max(0, remaining)));
+  res.setHeader("X-RateLimit-Reset", String(toEpochSeconds(resetAtMs)));
+
+  if (typeof retryAfterSeconds === "number") {
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+  }
+}
+
 export function createGitHubEndpointRateLimitMiddleware(
   dependencies: Partial<RateLimitDependencies> = {}
 ) {
@@ -76,15 +101,20 @@ export function createGitHubEndpointRateLimitMiddleware(
 
     const existing = windows.get(identity);
     if (!existing || timestamp - existing.windowStartMs >= windowMs) {
+      const resetAtMs = timestamp + windowMs;
       windows.set(identity, {
         windowStartMs: timestamp,
         count: 1
       });
+      applyRateLimitHeaders(res, maxRequests, maxRequests - 1, resetAtMs);
       next();
       return;
     }
 
     if (existing.count >= maxRequests) {
+      const resetAtMs = existing.windowStartMs + windowMs;
+      const retryAfterSeconds = computeRetryAfterSeconds(resetAtMs, timestamp);
+      applyRateLimitHeaders(res, maxRequests, 0, resetAtMs, retryAfterSeconds);
       sendApiError(res, {
         status: 429,
         code: "RATE_LIMITED",
@@ -95,6 +125,8 @@ export function createGitHubEndpointRateLimitMiddleware(
 
     existing.count += 1;
     windows.set(identity, existing);
+    const resetAtMs = existing.windowStartMs + windowMs;
+    applyRateLimitHeaders(res, maxRequests, maxRequests - existing.count, resetAtMs);
     next();
   };
 }

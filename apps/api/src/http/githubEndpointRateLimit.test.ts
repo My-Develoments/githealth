@@ -84,10 +84,26 @@ describe("createGitHubEndpointRateLimitMiddleware", () => {
       expect(second.status).toBe(200);
       expect(third.status).toBe(429);
 
+      expect(first.headers.get("x-ratelimit-limit")).toBe("2");
+      expect(first.headers.get("x-ratelimit-remaining")).toBe("1");
+      expect(first.headers.get("x-ratelimit-reset")).toBe("2");
+
+      expect(second.headers.get("x-ratelimit-limit")).toBe("2");
+      expect(second.headers.get("x-ratelimit-remaining")).toBe("0");
+      expect(second.headers.get("x-ratelimit-reset")).toBe("2");
+
+      expect(third.headers.get("x-ratelimit-limit")).toBe("2");
+      expect(third.headers.get("x-ratelimit-remaining")).toBe("0");
+      expect(third.headers.get("x-ratelimit-reset")).toBe("2");
+      expect(third.headers.get("retry-after")).toBe("1");
+
       now += 1001;
 
       const afterReset = await fetch(`${baseUrl}/health-score/github/organization`, { headers });
       expect(afterReset.status).toBe(200);
+      expect(afterReset.headers.get("x-ratelimit-limit")).toBe("2");
+      expect(afterReset.headers.get("x-ratelimit-remaining")).toBe("1");
+      expect(afterReset.headers.get("x-ratelimit-reset")).toBe("3");
     });
   });
 

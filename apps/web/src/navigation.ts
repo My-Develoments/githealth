@@ -55,9 +55,9 @@ export const appRoutes: AppRouteDefinition[] = [
   {
     id: "health-intelligence",
     path: "/health-intelligence",
-    title: "Health Intelligence",
-    description: "Recommendations, scoring context, and organization-level engineering insights.",
-    availability: "planned"
+    title: "Organization Health",
+    description: "Organization-level score, category signals, and actionable engineering health insights.",
+    availability: "live"
   },
   {
     id: "reports",

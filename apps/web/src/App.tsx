@@ -3,6 +3,7 @@ import { commandCenterActivityFeed, useGitHubHealthData } from "./data/useGitHub
 import { appRoutes, resolvePathForScreen, resolveScreenFromPath, type AppScreen } from "./navigation";
 import { CommandCenterScreen } from "./screens/CommandCenterScreen";
 import { GitHubSettingsScreen } from "./screens/GitHubSettingsScreen";
+import { OrganizationHealthScreen } from "./screens/OrganizationHealthScreen";
 import { RepositoryUniverseScreen } from "./screens/RepositoryUniverse/RepositoryUniverseScreen";
 import { SectionPlaceholderScreen } from "./screens/SectionPlaceholderScreen";
 
@@ -70,6 +71,21 @@ export function App() {
         integrationState={githubHealth.state}
         integrationError={githubHealth.error}
         connectedOrganization={connectedOrganization}
+        onConnectGitHub={githubHealth.connectGitHub}
+        onRetry={githubHealth.reload}
+      />
+    );
+  }
+
+  if (screen === "health-intelligence") {
+    return (
+      <OrganizationHealthScreen
+        activeNavId={screen}
+        onNavigate={navigateTo}
+        healthData={githubHealth.viewModels.commandCenter}
+        integrationState={githubHealth.state}
+        connection={githubHealth.connection}
+        integrationError={githubHealth.error}
         onConnectGitHub={githubHealth.connectGitHub}
         onRetry={githubHealth.reload}
       />

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { getGitHubScoreCacheStatistics } from "../application/githubScoringService.js";
 import { getServiceMetadata } from "../infrastructure/runtime/serviceMetadata.js";
 
 export const opsRoutes = Router();
@@ -9,6 +10,7 @@ opsRoutes.get("/health", (_req, res) => {
 
 opsRoutes.get("/ready", (_req, res) => {
   const metadata = getServiceMetadata();
+  const githubScoreCache = getGitHubScoreCacheStatistics();
 
   res.json({
     status: "ready",
@@ -16,7 +18,8 @@ opsRoutes.get("/ready", (_req, res) => {
     version: metadata.version,
     environment: metadata.environment,
     checks: {
-      configuration: "ok"
+      configuration: "ok",
+      githubScoreCache
     }
   });
 });

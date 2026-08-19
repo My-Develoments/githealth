@@ -14,6 +14,7 @@ import { toOrganizationInput } from "./githubNormalizedModels.js";
 import type { GitHubOrganizationDataRequest } from "./githubOrganizationDataAdapter.js";
 import { MockGitHubOrganizationAdapter } from "../infrastructure/github/mock/mockGitHubOrganizationAdapter.js";
 import { LiveGitHubOrganizationAdapter } from "../infrastructure/github/live/liveGitHubOrganizationAdapter.js";
+import { getGitHubScoreCacheConfig } from "../infrastructure/runtime/githubScoreCacheConfig.js";
 
 type GitHubScoreComputationResult = {
   source: GitHubSource;
@@ -29,8 +30,17 @@ type CachedGitHubScoreResult = {
   promise?: Promise<GitHubScoreComputationResult>;
 };
 
-const LIVE_GITHUB_SCORE_CACHE_TTL_MS = 30_000;
+export type GitHubScoreCacheStatistics = {
+  strategy: "in-memory";
+  ttlMs: number;
+  hits: number;
+  misses: number;
+  size: number;
+};
+
 const liveGitHubScoreCache = new Map<string, CachedGitHubScoreResult>();
+let liveGitHubScoreCacheHits = 0;
+let liveGitHubScoreCacheMisses = 0;
 
 export type GitHubOrganizationScoreResponse = {
   source: GitHubSource;
@@ -65,6 +75,14 @@ function resolveAdapter(source: GitHubSource) {
 
 function buildCacheKey(organization: string, source: GitHubSource, repository?: string): string {
   return JSON.stringify([organization, source, repository ?? ""]);
+}
+
+function pruneExpiredCacheEntries(now = Date.now()): void {
+  for (const [cacheKey, cacheEntry] of liveGitHubScoreCache) {
+    if (cacheEntry.result && cacheEntry.expiresAt <= now) {
+      liveGitHubScoreCache.delete(cacheKey);
+    }
+  }
 }
 
 async function computeGitHubScores(
@@ -107,24 +125,34 @@ async function getCachedGitHubScores(
     return computeGitHubScores(organization, sourceInput, repository);
   }
 
+  const { ttlMs } = getGitHubScoreCacheConfig();
+  pruneExpiredCacheEntries();
+
   const cacheKey = buildCacheKey(organization, source, repository);
   const now = Date.now();
   const cached = liveGitHubScoreCache.get(cacheKey);
 
   if (cached?.result && cached.expiresAt > now) {
+    liveGitHubScoreCacheHits += 1;
     return cached.result;
   }
 
   if (cached?.promise) {
+    liveGitHubScoreCacheHits += 1;
     return cached.promise;
   }
 
+  liveGitHubScoreCacheMisses += 1;
   const promise = computeGitHubScores(organization, sourceInput, repository)
     .then((result) => {
-      liveGitHubScoreCache.set(cacheKey, {
-        expiresAt: Date.now() + LIVE_GITHUB_SCORE_CACHE_TTL_MS,
-        result
-      });
+      if (result.fetchStatus === "complete") {
+        liveGitHubScoreCache.set(cacheKey, {
+          expiresAt: Date.now() + ttlMs,
+          result
+        });
+      } else {
+        liveGitHubScoreCache.delete(cacheKey);
+      }
       return result;
     })
     .catch((error) => {
@@ -133,7 +161,7 @@ async function getCachedGitHubScores(
     });
 
   liveGitHubScoreCache.set(cacheKey, {
-    expiresAt: now + LIVE_GITHUB_SCORE_CACHE_TTL_MS,
+    expiresAt: now + ttlMs,
     promise
   });
 
@@ -142,6 +170,22 @@ async function getCachedGitHubScores(
 
 export function resetGitHubScoreCache(): void {
   liveGitHubScoreCache.clear();
+  liveGitHubScoreCacheHits = 0;
+  liveGitHubScoreCacheMisses = 0;
+}
+
+export function getGitHubScoreCacheStatistics(): GitHubScoreCacheStatistics {
+  pruneExpiredCacheEntries();
+
+  const { ttlMs, strategy } = getGitHubScoreCacheConfig();
+
+  return {
+    strategy,
+    ttlMs,
+    hits: liveGitHubScoreCacheHits,
+    misses: liveGitHubScoreCacheMisses,
+    size: liveGitHubScoreCache.size
+  };
 }
 
 export async function getGitHubOrganizationScore(

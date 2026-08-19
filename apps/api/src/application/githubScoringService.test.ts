@@ -4,6 +4,7 @@ import {
   getGitHubOrganizationScore,
   getGitHubRepositoryScoreById,
   getGitHubRepositoryScores,
+  getGitHubScoreCacheStatistics,
   resetGitHubScoreCache
 } from "./githubScoringService.js";
 import type { GitHubNormalizedOrganization } from "./githubNormalizedModels.js";
@@ -11,6 +12,7 @@ import type { GitHubNormalizedOrganization } from "./githubNormalizedModels.js";
 describe("githubScoringService", () => {
   const previousToken = process.env.GITHUB_TOKEN;
   const previousRetries = process.env.GITHUB_MAX_RETRIES;
+  const previousCacheTtlMs = process.env.GITHUB_SCORE_CACHE_TTL_MS;
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -27,6 +29,12 @@ describe("githubScoringService", () => {
       delete process.env.GITHUB_MAX_RETRIES;
     } else {
       process.env.GITHUB_MAX_RETRIES = previousRetries;
+    }
+
+    if (typeof previousCacheTtlMs === "undefined") {
+      delete process.env.GITHUB_SCORE_CACHE_TTL_MS;
+    } else {
+      process.env.GITHUB_SCORE_CACHE_TTL_MS = previousCacheTtlMs;
     }
   });
 
@@ -100,9 +108,34 @@ describe("githubScoringService", () => {
     ]);
   });
 
-  it("caches live organization score results for a short TTL", async () => {
+  it("records live cache hits, misses, size, and ttl metadata", async () => {
+    process.env.GITHUB_TOKEN = "test-token";
+    process.env.GITHUB_SCORE_CACHE_TTL_MS = "15000";
+
+    const fetchOrganizationData = vi.spyOn(LiveGitHubOrganizationAdapter.prototype, "fetchOrganizationData");
+    fetchOrganizationData.mockImplementation(async (request) => buildLiveNormalizedOrganization(request.organization));
+
+    const first = await getGitHubOrganizationScore("cache-org", "live");
+    const second = await getGitHubOrganizationScore("cache-org", "live");
+
+    expect(fetchOrganizationData).toHaveBeenCalledTimes(1);
+    expect(first.organization.organizationId).toBe("cache-org");
+    expect(second.organization.organizationId).toBe("cache-org");
+
+    expect(getGitHubScoreCacheStatistics()).toEqual({
+      strategy: "in-memory",
+      ttlMs: 15000,
+      hits: 1,
+      misses: 1,
+      size: 1
+    });
+  });
+
+  it("expires live organization score cache entries after the configured ttl", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    process.env.GITHUB_TOKEN = "test-token";
+    process.env.GITHUB_SCORE_CACHE_TTL_MS = "30000";
 
     const fetchOrganizationData = vi.spyOn(LiveGitHubOrganizationAdapter.prototype, "fetchOrganizationData");
     fetchOrganizationData.mockResolvedValue(buildLiveNormalizedOrganization("cache-org"));
@@ -119,24 +152,67 @@ describe("githubScoringService", () => {
     await getGitHubOrganizationScore("cache-org", "live");
     expect(fetchOrganizationData).toHaveBeenCalledTimes(2);
 
-    vi.useRealTimers();
+    expect(getGitHubScoreCacheStatistics()).toMatchObject({
+      hits: 1,
+      misses: 2,
+      size: 1
+    });
   });
 
-  it("does not apply live cache to mock source", async () => {
-    const result = await getGitHubOrganizationScore("githealth-labs", "mock");
+  it("isolates live cache entries across organization keys", async () => {
+    process.env.GITHUB_TOKEN = "test-token";
 
-    expect(result.source).toBe("mock");
-    expect(result.organization.organizationId).toBe("githealth-labs");
+    const fetchOrganizationData = vi.spyOn(LiveGitHubOrganizationAdapter.prototype, "fetchOrganizationData");
+    fetchOrganizationData.mockImplementation(async (request) => buildLiveNormalizedOrganization(request.organization));
+
+    const first = await getGitHubOrganizationScore("cache-org-a", "live");
+    const second = await getGitHubOrganizationScore("cache-org-b", "live");
+    const third = await getGitHubOrganizationScore("cache-org-a", "live");
+
+    expect(fetchOrganizationData).toHaveBeenCalledTimes(2);
+    expect(first.organization.organizationId).toBe("cache-org-a");
+    expect(second.organization.organizationId).toBe("cache-org-b");
+    expect(third.organization.organizationId).toBe("cache-org-a");
+
+    expect(getGitHubScoreCacheStatistics()).toMatchObject({
+      hits: 1,
+      misses: 2,
+      size: 2
+    });
+  });
+
+  it("does not cache non-complete live score responses", async () => {
+    process.env.GITHUB_TOKEN = "test-token";
+
+    const fetchOrganizationData = vi.spyOn(LiveGitHubOrganizationAdapter.prototype, "fetchOrganizationData");
+    fetchOrganizationData.mockResolvedValue(buildLiveNormalizedOrganization("partial-org", "partial"));
+
+    const first = await getGitHubOrganizationScore("partial-org", "live");
+    const second = await getGitHubOrganizationScore("partial-org", "live");
+
+    expect(fetchOrganizationData).toHaveBeenCalledTimes(2);
+    expect(first.fetchStatus).toBe("partial");
+    expect(second.fetchStatus).toBe("partial");
+    expect(getGitHubScoreCacheStatistics()).toEqual({
+      strategy: "in-memory",
+      ttlMs: 30000,
+      hits: 0,
+      misses: 2,
+      size: 0
+    });
   });
 });
 
-function buildLiveNormalizedOrganization(organizationId: string): GitHubNormalizedOrganization {
+function buildLiveNormalizedOrganization(
+  organizationId: string,
+  fetchStatus: "complete" | "partial" | "failed" = "complete"
+): GitHubNormalizedOrganization {
   return {
     organizationId,
     organizationName: "Org",
     repositories: [],
     issues: [],
-    fetchStatus: "complete",
+    fetchStatus,
     calculatedAt: "2026-01-01T00:00:00.000Z"
   };
 }

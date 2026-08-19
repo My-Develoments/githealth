@@ -106,10 +106,16 @@ async function computeGitHubScores(
     calculatedAt: normalized.calculatedAt
   });
 
+  const normalizedRepositoriesById = new Map(
+    normalized.repositories.map((repository) => [repository.id, repository])
+  );
+
   return {
     source,
     organization: toApiOrganizationScore(scored.organizationScore),
-    repositories: scored.repositoryScores.map(toApiRepositoryScore),
+    repositories: scored.repositoryScores.map((repositoryScore) =>
+      toApiRepositoryScore(repositoryScore, normalizedRepositoriesById.get(repositoryScore.repositoryId))
+    ),
     fetchStatus: normalized.fetchStatus,
     adapterIssues: normalized.issues
   };

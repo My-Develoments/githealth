@@ -30,7 +30,44 @@ const FIXTURES: MockFixture = {
         cicd: {
           ciSuccessRate: 96,
           deploymentFrequencyWeekly: 14,
-          workflowFailureRate: 4
+          workflowFailureRate: 4,
+          workflowTelemetry: {
+            runSummary: {
+              totalRuns: 4,
+              completedRuns: 4,
+              successCount: 3,
+              failureCount: 1,
+              successRate: 75,
+              failureRate: 25,
+              latestRunAt: "2026-01-01T00:00:00.000Z"
+            },
+            recentRuns: [
+              {
+                id: 1001,
+                name: "build-and-test",
+                status: "completed",
+                conclusion: "success",
+                event: "push",
+                branch: "main",
+                runNumber: 128,
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:04:00.000Z",
+                url: "https://github.com/githealth-labs/frontend-web/actions/runs/1001"
+              },
+              {
+                id: 1000,
+                name: "integration",
+                status: "completed",
+                conclusion: "failure",
+                event: "pull_request",
+                branch: "feature/x",
+                runNumber: 127,
+                createdAt: "2025-12-31T12:00:00.000Z",
+                updatedAt: "2025-12-31T12:06:00.000Z",
+                url: "https://github.com/githealth-labs/frontend-web/actions/runs/1000"
+              }
+            ]
+          }
         },
         quality: {
           testCoverage: 91,

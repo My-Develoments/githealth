@@ -70,6 +70,56 @@ export type ApiOrganizationScore = {
 
 export type ApiRepositoryImportance = "critical" | "high" | "medium" | "low";
 
+export type ApiWorkflowRunStatus =
+  | "queued"
+  | "in_progress"
+  | "completed"
+  | "requested"
+  | "waiting"
+  | "pending"
+  | "unknown";
+
+export type ApiWorkflowRunConclusion =
+  | "success"
+  | "failure"
+  | "cancelled"
+  | "timed_out"
+  | "action_required"
+  | "startup_failure"
+  | "neutral"
+  | "skipped"
+  | "stale"
+  | "unknown";
+
+export type ApiWorkflowRunContext = {
+  id?: number;
+  name: string;
+  status: ApiWorkflowRunStatus;
+  conclusion?: ApiWorkflowRunConclusion;
+  event?: string;
+  branch?: string;
+  runNumber?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  url?: string;
+};
+
+export type ApiRepositoryCicdTelemetry = {
+  ciSuccessRate?: number;
+  deploymentFrequencyWeekly?: number;
+  workflowFailureRate?: number;
+  runSummary: {
+    totalRuns: number;
+    completedRuns: number;
+    successCount: number;
+    failureCount: number;
+    successRate?: number;
+    failureRate?: number;
+    latestRunAt?: string;
+  };
+  recentRuns: ApiWorkflowRunContext[];
+};
+
 export type ApiRepositoryScore = {
   repositoryId: string;
   repositoryName: string;
@@ -81,6 +131,7 @@ export type ApiRepositoryScore = {
   negativeContributors: ApiScoreContributor[];
   recommendations: ApiRecommendation[];
   validationIssues: ApiValidationIssue[];
+  cicdTelemetry?: ApiRepositoryCicdTelemetry;
 };
 
 export type GitHubOrganizationScoreResponse = {

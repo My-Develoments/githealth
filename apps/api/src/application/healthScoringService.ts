@@ -48,7 +48,7 @@ function computeScenarioScores(scenarioInput?: string): {
   return {
     scenario,
     organization: toApiOrganizationScore(organizationScore),
-    repositories: repositoryScores.map(toApiRepositoryScore)
+    repositories: repositoryScores.map((repositoryScore) => toApiRepositoryScore(repositoryScore))
   };
 }
 

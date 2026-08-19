@@ -93,6 +93,9 @@ describe("LiveGitHubOrganizationAdapter", () => {
     expect(metrics?.issue_hygiene).toBeDefined();
     expect(metrics?.dependabot_alert_age_days).toBeUndefined();
     expect(metrics?.stale_issue_age_days).toBeUndefined();
+    expect(result.repositories[0]?.cicdTelemetry?.runSummary.totalRuns).toBe(2);
+    expect(result.repositories[0]?.cicdTelemetry?.runSummary.successCount).toBe(2);
+    expect(result.repositories[0]?.cicdTelemetry?.recentRuns[0]?.name).toBe("build");
   });
 
   it("keeps branch protection undefined when upstream value is unknown", async () => {

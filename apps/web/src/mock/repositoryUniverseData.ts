@@ -22,6 +22,32 @@ export type UniverseRepository = {
   trend: number[];
   operationalDataAvailable?: boolean;
   trendDataAvailable?: boolean;
+  cicdTelemetry?: {
+    ciSuccessRate?: number;
+    deploymentFrequencyWeekly?: number;
+    workflowFailureRate?: number;
+    runSummary: {
+      totalRuns: number;
+      completedRuns: number;
+      successCount: number;
+      failureCount: number;
+      successRate?: number;
+      failureRate?: number;
+      latestRunAt?: string;
+    };
+    recentRuns: Array<{
+      id?: number;
+      name: string;
+      status: string;
+      conclusion?: string;
+      event?: string;
+      branch?: string;
+      runNumber?: number;
+      createdAt?: string;
+      updatedAt?: string;
+      url?: string;
+    }>;
+  };
   topProblems: string[];
   recommendations: string[];
 };

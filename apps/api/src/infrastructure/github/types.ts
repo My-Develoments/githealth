@@ -31,6 +31,56 @@ export type GitHubCicdSignalSlice = {
   ciSuccessRate?: number;
   deploymentFrequencyWeekly?: number;
   workflowFailureRate?: number;
+  workflowTelemetry?: GitHubWorkflowTelemetrySlice;
+};
+
+export type GitHubWorkflowRunStatus =
+  | "queued"
+  | "in_progress"
+  | "completed"
+  | "requested"
+  | "waiting"
+  | "pending"
+  | "unknown";
+
+export type GitHubWorkflowRunConclusion =
+  | "success"
+  | "failure"
+  | "cancelled"
+  | "timed_out"
+  | "action_required"
+  | "startup_failure"
+  | "neutral"
+  | "skipped"
+  | "stale"
+  | "unknown";
+
+export type GitHubWorkflowRunSummary = {
+  totalRuns: number;
+  completedRuns: number;
+  successCount: number;
+  failureCount: number;
+  successRate?: number;
+  failureRate?: number;
+  latestRunAt?: string;
+};
+
+export type GitHubWorkflowRunContext = {
+  id?: number;
+  name: string;
+  status: GitHubWorkflowRunStatus;
+  conclusion?: GitHubWorkflowRunConclusion;
+  event?: string;
+  branch?: string;
+  runNumber?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  url?: string;
+};
+
+export type GitHubWorkflowTelemetrySlice = {
+  runSummary: GitHubWorkflowRunSummary;
+  recentRuns: GitHubWorkflowRunContext[];
 };
 
 export type GitHubQualitySignalSlice = {

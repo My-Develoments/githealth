@@ -144,6 +144,7 @@ function mapRepository(input: GitHubRepositorySignalInput): GitHubNormalizedRepo
     name: input.repository.name,
     importance: deriveImportance(input),
     metrics,
+    cicdTelemetry: input.cicd?.workflowTelemetry,
     issues
   };
 }

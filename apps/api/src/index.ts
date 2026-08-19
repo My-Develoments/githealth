@@ -2,6 +2,7 @@ import express from "express";
 import { githubHealthScoreRoutes } from "./http/githubHealthScoreRoutes.js";
 import { healthScoreRoutes } from "./http/healthScoreRoutes.js";
 import { opsRoutes } from "./http/opsRoutes.js";
+import { localDevelopmentCors } from "./http/localDevelopmentCors.js";
 import { requestLogger } from "./infrastructure/observability/requestLogger.js";
 import { validateStartupConfiguration } from "./infrastructure/runtime/startupValidation.js";
 import { attachRequestContext } from "./http/requestContext.js";
@@ -16,6 +17,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const app = express();
   app.disable("x-powered-by");
 
+  app.use(localDevelopmentCors);
   app.use(attachRequestContext);
   app.use(requestLogger);
   app.use(opsRoutes);

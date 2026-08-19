@@ -3,6 +3,15 @@ import type { GitHubConnectionViewModel, GitHubHealthIntegrationState } from "..
 import type { CommandCenterHealthViewModel, RepositoryUniverseViewModel } from "../data/githubHealthViewMappers";
 import { navItems } from "../mock/commandCenterData";
 import type { AppScreen } from "../navigation";
+import {
+  isSectionConnectActionDisabled,
+  resolveSectionConnectActionLabel,
+  resolveSectionConnectionLabel,
+  resolveSectionConnectionTone,
+  resolveSectionDataState,
+  scoreTone,
+  shouldShowSectionConnectAction
+} from "./sectionScreenShared";
 import "./command-center.css";
 
 type ReportsScreenProps = {
@@ -21,96 +30,6 @@ type ReportsScreenProps = {
   onRetry?: () => void;
 };
 
-type ReportsDataState = "loading" | "ready" | "empty" | "error";
-
-function resolveDataState(state: GitHubHealthIntegrationState): ReportsDataState {
-  if (state === "loading") {
-    return "loading";
-  }
-
-  if (state === "error" || state === "failed") {
-    return "error";
-  }
-
-  if (state === "empty") {
-    return "empty";
-  }
-
-  return "ready";
-}
-
-function connectionTone(status: GitHubConnectionViewModel["status"]): "healthy" | "warning" | "neutral" | "critical" | "unknown" {
-  if (status === "connected") {
-    return "healthy";
-  }
-
-  if (status === "ready_to_connect" || status === "connecting" || status === "installation_completed") {
-    return "neutral";
-  }
-
-  if (status === "error" || status === "unauthorized_installation") {
-    return "critical";
-  }
-
-  if (status === "not_configured") {
-    return "warning";
-  }
-
-  return "unknown";
-}
-
-function connectionLabel(connection: GitHubConnectionViewModel): string {
-  if (connection.status === "connected") {
-    return "Connected";
-  }
-
-  if (connection.status === "ready_to_connect") {
-    return "Ready to connect";
-  }
-
-  if (connection.status === "connecting") {
-    return "Connecting";
-  }
-
-  if (connection.status === "installation_completed") {
-    return "Installation completed";
-  }
-
-  if (connection.status === "unauthorized_installation") {
-    return "Unauthorized installation";
-  }
-
-  if (connection.status === "not_configured") {
-    return "Not configured";
-  }
-
-  return "Connection error";
-}
-
-function connectActionLabel(connection: GitHubConnectionViewModel): "Connect GitHub" | "Reconnect GitHub" {
-  if (connection.status === "ready_to_connect") {
-    return "Connect GitHub";
-  }
-
-  return "Reconnect GitHub";
-}
-
-function scoreTone(score: number): "healthy" | "warning" | "critical" | "unknown" {
-  if (score >= 85) {
-    return "healthy";
-  }
-
-  if (score >= 70) {
-    return "warning";
-  }
-
-  if (score > 0) {
-    return "critical";
-  }
-
-  return "unknown";
-}
-
 function signalToneBadge(tone: CommandCenterHealthViewModel["categorySignals"][number]["tone"]): "healthy" | "warning" | "critical" | "neutral" | "unknown" {
   return tone;
 }
@@ -126,7 +45,7 @@ export function ReportsScreen({
   onConnectGitHub,
   onRetry
 }: ReportsScreenProps) {
-  const dataState = resolveDataState(integrationState);
+  const dataState = resolveSectionDataState(integrationState);
   const repositories = repositoryData.repositories;
   const topRepositoryContext = [...repositories]
     .filter((repository) => repository.healthScore > 0)
@@ -136,8 +55,8 @@ export function ReportsScreen({
   const categorySignals = healthData.categorySignals.slice(0, 4);
   const reportInsights = healthData.insights.slice(0, 3);
   const repositoryUniverseHighlights = repositoryData.insights.slice(0, 3);
-  const showConnectAction = connection.provider === "app" && !connection.isConnected;
-  const isConnectActionDisabled = connection.status === "connecting" || connection.status === "installation_completed" || !connection.canConnect;
+  const showConnectAction = shouldShowSectionConnectAction(connection);
+  const isConnectActionDisabled = isSectionConnectActionDisabled(connection);
 
   return (
     <div className="cc-shell rhs-shell">
@@ -203,7 +122,7 @@ export function ReportsScreen({
 
           <div className="cc-header-controls">
             <Badge tone={healthData.source === "mock" ? "warning" : "healthy"}>{`Source: ${healthData.source}`}</Badge>
-            <Badge tone={connectionTone(connection.status)}>{connectionLabel(connection)}</Badge>
+            <Badge tone={resolveSectionConnectionTone(connection.status)}>{resolveSectionConnectionLabel(connection)}</Badge>
           </div>
         </header>
 
@@ -257,7 +176,7 @@ export function ReportsScreen({
               <Heading as="h3" size="sm">
                 Data Readiness
               </Heading>
-              <Badge tone={connectionTone(connection.status)}>{connection.provider === "app" ? "GitHub App" : "PAT"}</Badge>
+              <Badge tone={resolveSectionConnectionTone(connection.status)}>{connection.provider === "app" ? "GitHub App" : "PAT"}</Badge>
             </div>
 
             <Text size="sm" tone="secondary">
@@ -280,9 +199,9 @@ export function ReportsScreen({
                     void onConnectGitHub?.();
                   }}
                   disabled={isConnectActionDisabled}
-                  aria-label={connectActionLabel(connection)}
+                  aria-label={resolveSectionConnectActionLabel(connection)}
                 >
-                  {connectActionLabel(connection)}
+                  {resolveSectionConnectActionLabel(connection)}
                 </Button>
               </div>
             ) : null}

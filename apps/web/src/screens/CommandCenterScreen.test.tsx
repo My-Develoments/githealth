@@ -34,7 +34,7 @@ describe("CommandCenterScreen source isolation", () => {
     expect(screen.getByText("Historical trend data is unavailable from the current live API source.")).toBeTruthy();
     expect(screen.getByText("Achievement data is unavailable in live mode.")).toBeTruthy();
     expect(screen.getByText("Relationship preview is unavailable because topology data is not provided by the live API.")).toBeTruthy();
-    expect(screen.getByText("Scan progress telemetry is unavailable for the live API path.")).toBeTruthy();
+    expect(screen.getByText("Connect GitHub to enable live organization scans and live telemetry in this workspace.")).toBeTruthy();
     expect(screen.getByText("Recent engineering activity is unavailable from the current source.")).toBeTruthy();
   });
 
@@ -93,6 +93,53 @@ describe("CommandCenterScreen source isolation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }));
     expect(onConnectGitHub).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Ready to connect")).toBeTruthy();
+    expect(screen.getByText("GitHub App Onboarding")).toBeTruthy();
+    expect(screen.getByText("Install the GitHub App to unlock live organization scans, health scoring, and repository insights.")).toBeTruthy();
+  });
+
+  it("shows a connected state when GitHub App onboarding has completed", () => {
+    render(
+      <CommandCenterScreen
+        healthData={buildHealthModel("live")}
+        activityState={{ isLoading: false, isEmpty: false, hasError: false }}
+        connection={{
+          provider: "app",
+          status: "connected",
+          isConnected: true,
+          canConnect: true,
+          hasInstallationId: true,
+          installUrlConfigured: true,
+          callbackRedirectConfigured: true,
+          message: "GitHub App installation is connected."
+        }}
+      />
+    );
+
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getByText("Live access ready")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Connect GitHub" })).toBeNull();
+  });
+
+  it("shows an actionable not-configured message when the app is unavailable", () => {
+    render(
+      <CommandCenterScreen
+        healthData={buildHealthModel("live")}
+        activityState={{ isLoading: false, isEmpty: true, hasError: false }}
+        connection={{
+          provider: "app",
+          status: "not_configured",
+          isConnected: false,
+          canConnect: false,
+          hasInstallationId: false,
+          installUrlConfigured: false,
+          callbackRedirectConfigured: false,
+          message: "GitHub App onboarding is unavailable because GITHUB_APP_INSTALL_URL is not configured."
+        }}
+      />
+    );
+
+    expect(screen.getByText("Not configured")).toBeTruthy();
+    expect(screen.getByText("Connect GitHub to load live repository health data.")).toBeTruthy();
   });
 
   it("does not render retry action when there is no error", () => {

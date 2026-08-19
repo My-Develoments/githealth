@@ -68,6 +68,102 @@ function resolveConnectionLabel(connection: GitHubConnectionViewModel): string {
   return "Connection error";
 }
 
+function resolveConnectionActionLabel(connection: GitHubConnectionViewModel): string {
+  if (connection.status === "not_configured") {
+    return "GitHub App unavailable";
+  }
+
+  if (connection.status === "ready_to_connect") {
+    return "Install GitHub App";
+  }
+
+  if (connection.status === "connecting") {
+    return "Connecting...";
+  }
+
+  return "Connect GitHub";
+}
+
+function resolveConnectionGuidance(connection: GitHubConnectionViewModel): string {
+  if (connection.provider === "pat") {
+    return "Server-managed access is active. Live GitHub data can load without browser-side onboarding.";
+  }
+
+  if (connection.status === "not_configured") {
+    return "GitHub App onboarding is not configured for this environment yet. Live scans stay unavailable until the app setup is completed on the API deployment.";
+  }
+
+  if (connection.status === "ready_to_connect") {
+    return "Install the GitHub App to unlock live organization scans, health scoring, and repository insights.";
+  }
+
+  if (connection.status === "installation_completed") {
+    return "Installation completed. GitHealth is finalizing the authenticated session for live organization access.";
+  }
+
+  if (connection.status === "connected") {
+    return "GitHub App authentication is active. Live organization health data is ready to scan and explore.";
+  }
+
+  if (connection.status === "unauthorized_installation") {
+    return "The installed GitHub App does not match an allowed organization for this environment. Install the app for an authorized organization or update the server allowlist.";
+  }
+
+  return "GitHub App onboarding is currently blocked. Retry the connection check or reconnect the app.";
+}
+
+function renderConnectionCard(
+  connection: GitHubConnectionViewModel,
+  onConnectGitHub: CommandCenterScreenProps["onConnectGitHub"],
+  options: { className: string; tone?: "base" | "subtle" | "elevated" | "stronger" }
+) {
+  const showConnectAction = connection.provider === "app" && !connection.isConnected && connection.canConnect;
+
+  return (
+    <Panel tone={options.tone ?? "subtle"} className={options.className}>
+      <div className="cc-connection-card__header">
+        <div className="cc-connection-card__title-block">
+          <Text size="sm" tone="muted">
+            GitHub Connection
+          </Text>
+          <Heading as="h3" size="md">
+            {connection.provider === "app" ? "GitHub App Onboarding" : "Server GitHub Access"}
+          </Heading>
+        </div>
+        <Badge tone={resolveConnectionTone(connection.status)}>{resolveConnectionLabel(connection)}</Badge>
+      </div>
+
+      <Text size="sm" tone="secondary">
+        {connection.message}
+      </Text>
+      <Text size="sm" tone="muted">
+        {resolveConnectionGuidance(connection)}
+      </Text>
+
+      <div className="cc-connection-card__meta">
+        <span>Provider: {connection.provider === "app" ? "GitHub App" : "Personal access token"}</span>
+        <span>{connection.isConnected ? "Live access ready" : connection.canConnect ? "Action required" : "Configuration required"}</span>
+      </div>
+
+      {showConnectAction ? (
+        <div className="cc-connection-card__actions">
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => {
+              void onConnectGitHub?.();
+            }}
+            disabled={connection.status === "connecting"}
+            aria-label="Connect GitHub"
+          >
+            {resolveConnectionActionLabel(connection)}
+          </Button>
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
+
 function impactTone(impact: "High" | "Medium" | "Low"): "critical" | "warning" | "neutral" {
   if (impact === "High") {
     return "critical";
@@ -273,6 +369,10 @@ export function CommandCenterScreen({
   const resolvedRecentActivity = recentActivity ?? (isMockSource ? recentEngineeringActivityDefaults : []);
   const reducedMotion = usePrefersReducedMotion();
   const errorGuidance = resolveErrorGuidance(integrationError);
+  const shouldPromptConnection =
+    resolvedConnection.provider === "app" &&
+    !resolvedConnection.isConnected &&
+    (resolvedConnection.status === "ready_to_connect" || resolvedConnection.status === "not_configured");
 
   const animatedScore = useAnimatedNumber(resolvedHealth.score, 1180, reducedMotion, 260);
   const animatedRepositories = useAnimatedNumber(resolvedHealth.totalRepositories, 960, reducedMotion, 760);
@@ -440,6 +540,11 @@ export function CommandCenterScreen({
             </Button>
           </div>
         </header>
+
+        {renderConnectionCard(resolvedConnection, onConnectGitHub, {
+          className: "cc-connection-banner cc-reveal cc-reveal--hero",
+          tone: "elevated"
+        })}
 
         <section className="cc-grid" aria-label="Command center overview">
           <Panel tone="elevated" className="cc-hero cc-reveal cc-reveal--hero">
@@ -777,34 +882,6 @@ export function CommandCenterScreen({
         </section>
 
         <section className="cc-states cc-reveal cc-reveal--states" aria-label="Operational states">
-          <Panel tone="subtle" className="cc-state-card">
-            <div className="cc-state-header">
-              <Heading as="h3" size="sm">
-                GitHub Connection
-              </Heading>
-              <Badge tone={resolveConnectionTone(resolvedConnection.status)}>{resolveConnectionLabel(resolvedConnection)}</Badge>
-            </div>
-            <Text size="sm" tone="secondary">
-              {resolvedConnection.message}
-            </Text>
-            <Text size="sm" tone="muted">
-              Provider: {resolvedConnection.provider === "app" ? "GitHub App" : "Personal access token"}
-            </Text>
-            {resolvedConnection.provider === "app" && !resolvedConnection.isConnected && resolvedConnection.canConnect ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  void onConnectGitHub?.();
-                }}
-                disabled={resolvedConnection.status === "connecting"}
-                aria-label="Connect GitHub"
-              >
-                {resolvedConnection.status === "connecting" ? "Connecting..." : "Connect GitHub"}
-              </Button>
-            ) : null}
-          </Panel>
-
           <Panel tone="subtle" className="cc-state-card cc-state-card--scan">
             <div className="cc-state-header">
               <Heading as="h3" size="sm">
@@ -842,7 +919,9 @@ export function CommandCenterScreen({
               </>
             ) : (
               <Text size="sm" tone="muted">
-                Scan progress telemetry is unavailable for the live API path.
+                {shouldPromptConnection
+                  ? "Connect GitHub to enable live organization scans and live telemetry in this workspace."
+                  : "Scan progress telemetry is unavailable for the live API path."}
               </Text>
             )}
           </Panel>
@@ -859,7 +938,11 @@ export function CommandCenterScreen({
               </div>
             ) : (
               <Text size="sm" tone="muted">
-                {resolvedActivity.isEmpty ? "No repository data available yet." : "No active loading jobs."}
+                {resolvedActivity.isEmpty
+                  ? shouldPromptConnection
+                    ? "Connect GitHub to load live repository health data."
+                    : "No repository data available yet."
+                  : "No active loading jobs."}
               </Text>
             )}
           </Panel>

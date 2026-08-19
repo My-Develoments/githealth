@@ -50,7 +50,7 @@ export const appRoutes: AppRouteDefinition[] = [
     path: "/cicd",
     title: "CI / CD",
     description: "Delivery reliability, workflow health, and release execution visibility.",
-    availability: "planned"
+    availability: "live"
   },
   {
     id: "health-intelligence",

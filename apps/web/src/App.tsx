@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { commandCenterActivityFeed, useGitHubHealthData } from "./data/useGitHubHealthData";
 import { appRoutes, resolvePathForScreen, resolveScreenFromPath, type AppScreen } from "./navigation";
 import { CommandCenterScreen } from "./screens/CommandCenterScreen";
+import { CiCdHealthScreen } from "./screens/CiCdHealthScreen";
 import { GitHubSettingsScreen } from "./screens/GitHubSettingsScreen";
 import { GovernanceScreen } from "./screens/GovernanceScreen";
 import { OrganizationHealthScreen } from "./screens/OrganizationHealthScreen";
@@ -113,6 +114,22 @@ export function App() {
   if (screen === "governance") {
     return (
       <GovernanceScreen
+        activeNavId={screen}
+        onNavigate={navigateTo}
+        healthData={githubHealth.viewModels.commandCenter}
+        repositoryData={githubHealth.viewModels.repositoryUniverse}
+        integrationState={githubHealth.state}
+        connection={githubHealth.connection}
+        integrationError={githubHealth.error}
+        onConnectGitHub={githubHealth.connectGitHub}
+        onRetry={githubHealth.reload}
+      />
+    );
+  }
+
+  if (screen === "cicd") {
+    return (
+      <CiCdHealthScreen
         activeNavId={screen}
         onNavigate={navigateTo}
         healthData={githubHealth.viewModels.commandCenter}

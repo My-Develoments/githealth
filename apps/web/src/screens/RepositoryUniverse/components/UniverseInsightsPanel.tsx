@@ -75,22 +75,28 @@ export function UniverseInsightsPanel({ insights, activity, repositories }: Univ
         <Heading as="h3" size="sm">
           Recent Engineering Activity
         </Heading>
-        <ul className="ru-activity-list">
-          {activity.map((entry) => (
-            <li key={entry.id}>
-              <span className={`ru-activity-dot ru-activity-dot--${badgeToneFromStatus(entry.tone)}`} aria-hidden="true" />
-              <div>
-                <Text size="sm">{entry.event}</Text>
-                <Text size="sm" tone="secondary">
-                  {entry.context}
+        {activity.length > 0 ? (
+          <ul className="ru-activity-list">
+            {activity.map((entry) => (
+              <li key={entry.id}>
+                <span className={`ru-activity-dot ru-activity-dot--${badgeToneFromStatus(entry.tone)}`} aria-hidden="true" />
+                <div>
+                  <Text size="sm">{entry.event}</Text>
+                  <Text size="sm" tone="secondary">
+                    {entry.context}
+                  </Text>
+                </div>
+                <Text size="sm" tone="muted">
+                  {entry.when}
                 </Text>
-              </div>
-              <Text size="sm" tone="muted">
-                {entry.when}
-              </Text>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Text size="sm" tone="muted">
+            Recent engineering activity is unavailable from the current API source.
+          </Text>
+        )}
       </Panel>
     </div>
   );

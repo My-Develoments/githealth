@@ -9,9 +9,10 @@ describe("githubHealthConfig sanitizers", () => {
     expect(__testables.sanitizeOrganization("githealth-labs")).toBe("githealth-labs");
   });
 
-  it("falls back to mock for invalid sources", () => {
-    expect(__testables.sanitizeSource(undefined)).toBe("mock");
-    expect(__testables.sanitizeSource("bad-value")).toBe("mock");
+  it("defaults to live for missing/invalid sources while preserving explicit mock", () => {
+    expect(__testables.sanitizeSource(undefined)).toBe("live");
+    expect(__testables.sanitizeSource("bad-value")).toBe("live");
+    expect(__testables.sanitizeSource("mock")).toBe("mock");
     expect(__testables.sanitizeSource("live")).toBe("live");
   });
 

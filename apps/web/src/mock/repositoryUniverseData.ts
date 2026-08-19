@@ -20,6 +20,8 @@ export type UniverseRepository = {
   dependencies: number;
   lastActivity: string;
   trend: number[];
+  operationalDataAvailable?: boolean;
+  trendDataAvailable?: boolean;
   topProblems: string[];
   recommendations: string[];
 };

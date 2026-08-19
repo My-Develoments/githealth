@@ -35,6 +35,22 @@ describe("githubScoringService", () => {
     expect(result.organization.overallScore).toBeLessThanOrEqual(100);
   });
 
+  it("defaults to live source when source is omitted", async () => {
+    delete process.env.GITHUB_TOKEN;
+
+    await expect(getGitHubOrganizationScore("githealth-labs")).rejects.toThrow(
+      "GITHUB_TOKEN is required for live GitHub source."
+    );
+  });
+
+  it("keeps explicit live source behavior when source is provided", async () => {
+    delete process.env.GITHUB_TOKEN;
+
+    await expect(getGitHubOrganizationScore("githealth-labs", "live")).rejects.toThrow(
+      "GITHUB_TOKEN is required for live GitHub source."
+    );
+  });
+
   it("returns repository scores from mock source", async () => {
     const result = await getGitHubRepositoryScores("githealth-labs", "mock");
 
@@ -67,6 +83,7 @@ describe("githubScoringService", () => {
 
     const result = await getGitHubOrganizationScore("org", "live");
 
+    expect(result.source).toBe("live");
     expect(result.fetchStatus).toBe("failed");
     expect(result.organization.organizationId).toBe("org");
     expect(result.organization.overallScore).toBe(0);

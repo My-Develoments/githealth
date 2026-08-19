@@ -29,6 +29,24 @@ describe("RepositoryDetailsPanel", () => {
     ).toBeTruthy();
     expect(screen.getByText("Resolve open security alerts with highest severity first.")).toBeTruthy();
   });
+
+  it("shows unavailable operational and trend data when API source does not provide them", () => {
+    render(
+      <RepositoryDetailsPanel
+        repository={{
+          ...buildRepository("critical"),
+          operationalDataAvailable: false,
+          trendDataAvailable: false,
+          trend: []
+        }}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Last activity: Unavailable")).toBeTruthy();
+    expect(screen.getByText("Operational repository metrics are unavailable from the current API source.")).toBeTruthy();
+    expect(screen.getByText("Repository trend data is unavailable from the current API source.")).toBeTruthy();
+  });
 });
 
 function buildRepository(status: UniverseRepository["status"]): UniverseRepository {

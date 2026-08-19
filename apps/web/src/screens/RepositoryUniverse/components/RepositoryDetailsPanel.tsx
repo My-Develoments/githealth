@@ -68,6 +68,8 @@ export function RepositoryDetailsPanel({ repository, onClose }: RepositoryDetail
   }
 
   const trendPath = pathForTrend(repository.trend, 180, 64);
+  const hasOperationalData = repository.operationalDataAvailable !== false;
+  const hasTrendData = repository.trendDataAvailable !== false && repository.trend.length > 0;
 
   return (
     <Panel tone="base" className="ru-details-panel ru-details-panel--active" key={repository.id}>
@@ -77,7 +79,7 @@ export function RepositoryDetailsPanel({ repository, onClose }: RepositoryDetail
             {repository.name}
           </Heading>
           <Text size="sm" tone="muted">
-            Last activity: {repository.lastActivity}
+            Last activity: {hasOperationalData ? repository.lastActivity : "Unavailable"}
           </Text>
         </div>
         <Button variant="tertiary" size="sm" onClick={onClose}>
@@ -135,26 +137,40 @@ export function RepositoryDetailsPanel({ repository, onClose }: RepositoryDetail
       </div>
 
       <div className="ru-details-operational">
-        <Text size="sm" tone="secondary">
-          Open issues: {repository.openIssues}
-        </Text>
-        <Text size="sm" tone="secondary">
-          Pull requests: {repository.pullRequests}
-        </Text>
-        <Text size="sm" tone="secondary">
-          Security alerts: {repository.securityAlerts}
-        </Text>
-        <Text size="sm" tone="secondary">
-          Dependencies: {repository.dependencies}
-        </Text>
+        {hasOperationalData ? (
+          <>
+            <Text size="sm" tone="secondary">
+              Open issues: {repository.openIssues}
+            </Text>
+            <Text size="sm" tone="secondary">
+              Pull requests: {repository.pullRequests}
+            </Text>
+            <Text size="sm" tone="secondary">
+              Security alerts: {repository.securityAlerts}
+            </Text>
+            <Text size="sm" tone="secondary">
+              Dependencies: {repository.dependencies}
+            </Text>
+          </>
+        ) : (
+          <Text size="sm" tone="muted">
+            Operational repository metrics are unavailable from the current API source.
+          </Text>
+        )}
       </div>
 
-      <div className="ru-details-trend" role="img" aria-label={`Health trend for ${repository.name}`}>
-        <svg viewBox="0 0 180 72" preserveAspectRatio="none" aria-hidden="true">
-          <path d={`${trendPath} L180,72 L0,72 Z`} className="ru-details-trend-area" />
-          <path d={trendPath} className="ru-details-trend-line" />
-        </svg>
-      </div>
+      {hasTrendData ? (
+        <div className="ru-details-trend" role="img" aria-label={`Health trend for ${repository.name}`}>
+          <svg viewBox="0 0 180 72" preserveAspectRatio="none" aria-hidden="true">
+            <path d={`${trendPath} L180,72 L0,72 Z`} className="ru-details-trend-area" />
+            <path d={trendPath} className="ru-details-trend-line" />
+          </svg>
+        </div>
+      ) : (
+        <Text size="sm" tone="muted">
+          Repository trend data is unavailable from the current API source.
+        </Text>
+      )}
 
       <div className="ru-details-columns">
         <div>

@@ -18,6 +18,7 @@ import type {
   CommandCenterHealthViewModel
 } from "../data/githubHealthViewMappers";
 import type { GitHubConnectionViewModel } from "../data/githubHealthContracts";
+import type { AppScreen } from "../navigation";
 import "./command-center.css";
 
 function resolveConnectionTone(status: GitHubConnectionViewModel["status"]): "healthy" | "warning" | "neutral" | "critical" | "unknown" {
@@ -254,6 +255,8 @@ function pulsePath(values: number[], width: number, height: number) {
 }
 
 type CommandCenterScreenProps = {
+  activeNavId?: AppScreen;
+  onNavigate?: (screen: AppScreen) => void;
   onExploreUniverse?: () => void;
   healthData?: CommandCenterHealthViewModel;
   activityState?: CommandCenterActivityState;
@@ -329,6 +332,8 @@ const unavailableHealthViewModel: CommandCenterHealthViewModel = {
 };
 
 export function CommandCenterScreen({
+  activeNavId = "command-center",
+  onNavigate,
   onExploreUniverse,
   healthData,
   activityState,
@@ -470,12 +475,19 @@ export function CommandCenterScreen({
           {navItems.map((item) => (
             <Button
               key={item.id}
-              variant={item.active ? "primary" : "tertiary"}
+              variant={item.id === activeNavId ? "primary" : "tertiary"}
               size="md"
-              selected={Boolean(item.active)}
+              selected={item.id === activeNavId}
               className="cc-nav-item"
-              aria-current={item.active ? "page" : undefined}
-              onClick={item.id === "repository-universe" ? onExploreUniverse : undefined}
+              aria-current={item.id === activeNavId ? "page" : undefined}
+              onClick={() => {
+                if (item.id === "repository-universe") {
+                  onExploreUniverse?.();
+                  return;
+                }
+
+                onNavigate?.(item.id as AppScreen);
+              }}
             >
               {item.label}
             </Button>

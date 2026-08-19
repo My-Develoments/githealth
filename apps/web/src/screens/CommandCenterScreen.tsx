@@ -2,12 +2,10 @@ import { Badge, Button, Heading, Panel, Text } from "@githealth/ui";
 import { useEffect, useMemo, useState } from "react";
 import {
   achievements,
-  categorySignals as categorySignalDefaults,
   commandCenterData,
   healthTrendKeyPoints,
   healthTrend30Day,
   healthTrendLabels,
-  insights as insightDefaults,
   navItems,
   pulseSeries,
   recentEngineeringActivity as recentEngineeringActivityDefaults,
@@ -117,28 +115,43 @@ type CommandCenterScreenProps = {
   recentActivity?: typeof recentEngineeringActivityDefaults;
 };
 
+const unavailableHealthViewModel: CommandCenterHealthViewModel = {
+  source: "live",
+  organization: "Unavailable",
+  score: 0,
+  scoreStatus: "Unavailable",
+  totalRepositories: 0,
+  pulse: {
+    healthy: 0,
+    warning: 0,
+    critical: 0,
+    lastScan: "Unavailable"
+  },
+  categorySignals: [],
+  insights: [],
+  fetchStatus: "failed",
+  adapterIssues: []
+};
+
 export function CommandCenterScreen({ onExploreUniverse, healthData, activityState, recentActivity }: CommandCenterScreenProps) {
-  const resolvedHealth: CommandCenterHealthViewModel =
-    healthData ??
-    {
-      organization: commandCenterData.organization,
-      score: commandCenterData.score,
-      scoreStatus: commandCenterData.scoreStatus,
-      totalRepositories: commandCenterData.totalRepositories,
-      pulse: commandCenterData.pulse,
-      categorySignals: categorySignalDefaults,
-      insights: insightDefaults,
-      fetchStatus: "complete",
-      adapterIssues: []
-    };
+  const resolvedHealth: CommandCenterHealthViewModel = healthData ?? unavailableHealthViewModel;
+  const isMockSource = resolvedHealth.source === "mock";
 
-  const resolvedActivity: CommandCenterActivityState = activityState ?? {
-    isLoading: commandCenterData.activity.isLoading,
-    isEmpty: commandCenterData.activity.isEmpty,
-    hasError: commandCenterData.activity.hasError
-  };
+  const resolvedActivity: CommandCenterActivityState =
+    activityState ??
+    (isMockSource
+      ? {
+          isLoading: commandCenterData.activity.isLoading,
+          isEmpty: commandCenterData.activity.isEmpty,
+          hasError: commandCenterData.activity.hasError
+        }
+      : {
+          isLoading: true,
+          isEmpty: true,
+          hasError: false
+        });
 
-  const resolvedRecentActivity = recentActivity ?? recentEngineeringActivityDefaults;
+  const resolvedRecentActivity = recentActivity ?? (isMockSource ? recentEngineeringActivityDefaults : []);
   const reducedMotion = usePrefersReducedMotion();
 
   const animatedScore = useAnimatedNumber(resolvedHealth.score, 1180, reducedMotion, 260);
@@ -269,7 +282,7 @@ export function CommandCenterScreen({ onExploreUniverse, healthData, activitySta
         <header className="cc-header cc-reveal cc-reveal--header">
           <div className="cc-header-title">
             <Text size="sm" tone="muted">
-              Good morning, {commandCenterData.userName}.
+              {isMockSource ? `Good morning, ${commandCenterData.userName}.` : "GitHub organization health overview."}
             </Text>
             <Heading as="h2" size="display">
               Engineering Intelligence Center
@@ -280,7 +293,7 @@ export function CommandCenterScreen({ onExploreUniverse, healthData, activitySta
           </div>
 
           <div className="cc-header-controls">
-            <Badge tone="neutral">{commandCenterData.periodLabel}</Badge>
+            <Badge tone="neutral">{isMockSource ? commandCenterData.periodLabel : `Source: ${resolvedHealth.source}`}</Badge>
             <label className="cc-search" htmlFor="command-search">
               <span className="sr-only">Search commands</span>
               <input
@@ -327,12 +340,25 @@ export function CommandCenterScreen({ onExploreUniverse, healthData, activitySta
             </div>
 
             <div className="cc-score-trend-wrap">
-              <Text className="cc-trend" tone="primary">
-                {commandCenterData.scoreTrend}
-              </Text>
-              <Text size="sm" tone="muted">
-                {commandCenterData.scoreTrendContext}
-              </Text>
+              {isMockSource ? (
+                <>
+                  <Text className="cc-trend" tone="primary">
+                    {commandCenterData.scoreTrend}
+                  </Text>
+                  <Text size="sm" tone="muted">
+                    {commandCenterData.scoreTrendContext}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text className="cc-trend" tone="secondary">
+                    Trend unavailable
+                  </Text>
+                  <Text size="sm" tone="muted">
+                    Historical trend data is not provided by the current live API.
+                  </Text>
+                </>
+              )}
             </div>
 
             <div className="cc-score-contrib" aria-label="Score contributors">
@@ -408,74 +434,80 @@ export function CommandCenterScreen({ onExploreUniverse, healthData, activitySta
               </Text>
             </div>
 
-            <div className="cc-universe-canvas" role="img" aria-label="Repository relationship preview map">
-              <svg className="cc-connections" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                {repoConnections.map((connection) => {
-                  const fromNode = repoNodes.find((node) => node.id === connection.from);
-                  const toNode = repoNodes.find((node) => node.id === connection.to);
-                  if (!fromNode || !toNode) {
-                    return null;
-                  }
+            {isMockSource ? (
+              <div className="cc-universe-canvas" role="img" aria-label="Repository relationship preview map">
+                <svg className="cc-connections" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  {repoConnections.map((connection) => {
+                    const fromNode = repoNodes.find((node) => node.id === connection.from);
+                    const toNode = repoNodes.find((node) => node.id === connection.to);
+                    if (!fromNode || !toNode) {
+                      return null;
+                    }
 
-                  const isConnected =
-                    activeNodeId === connection.from ||
-                    activeNodeId === connection.to ||
-                    activeNodeId === "org-core";
+                    const isConnected =
+                      activeNodeId === connection.from ||
+                      activeNodeId === connection.to ||
+                      activeNodeId === "org-core";
 
-                  return (
-                    <line
-                      key={`${connection.from}-${connection.to}`}
-                      x1={fromNode.x}
-                      y1={fromNode.y}
-                      x2={toNode.x}
-                      y2={toNode.y}
-                      className={`cc-link cc-link--${connection.strength}`}
-                      data-active={isConnected ? "true" : "false"}
-                    />
-                  );
-                })}
-              </svg>
+                    return (
+                      <line
+                        key={`${connection.from}-${connection.to}`}
+                        x1={fromNode.x}
+                        y1={fromNode.y}
+                        x2={toNode.x}
+                        y2={toNode.y}
+                        className={`cc-link cc-link--${connection.strength}`}
+                        data-active={isConnected ? "true" : "false"}
+                      />
+                    );
+                  })}
+                </svg>
 
-              <button
-                type="button"
-                className="cc-universe-core"
-                onMouseEnter={() => setActiveNodeId("org-core")}
-                onFocus={() => setActiveNodeId("org-core")}
-                aria-label="GitHealth organization core"
-              >
-                <span>GH</span>
-                <small>Org</small>
-              </button>
-
-              {repoNodes.map((node, index) => (
                 <button
-                  key={node.id}
-                  className={`cc-node cc-node--${node.tone}`}
-                  style={{ left: `${node.x}%`, top: `${node.y}%` }}
-                  aria-label={`${node.label} ${node.tone} ${node.group}`}
                   type="button"
-                  data-active={activeNodeId === node.id ? "true" : "false"}
-                  data-linked={linkedNodeIds.has(node.id) ? "true" : "false"}
-                  onMouseEnter={() => setActiveNodeId(node.id)}
-                  onFocus={() => setActiveNodeId(node.id)}
+                  className="cc-universe-core"
+                  onMouseEnter={() => setActiveNodeId("org-core")}
+                  onFocus={() => setActiveNodeId("org-core")}
+                  aria-label="GitHealth organization core"
                 >
-                  <span className="cc-node-halo" style={{ animationDelay: `${index * 140}ms` }} />
-                  <span className="cc-node-label" aria-hidden="true">
-                    {node.label}
-                  </span>
-                  <span className="sr-only">{node.label}</span>
+                  <span>GH</span>
+                  <small>Org</small>
                 </button>
-              ))}
 
-              <div className="cc-universe-tooltip" role="status" aria-live="polite">
-                <strong>{activeNodeLabel}</strong>
-                <span>
-                  {activeNodeGroup}
-                  {activeNodeId !== "org-core" ? ` · ${activeNodeTone}` : ""}
-                </span>
-                <span>{activeNodeId === "org-core" ? `${repoConnections.length} active links` : `${linkedCount} linked services`}</span>
+                {repoNodes.map((node, index) => (
+                  <button
+                    key={node.id}
+                    className={`cc-node cc-node--${node.tone}`}
+                    style={{ left: `${node.x}%`, top: `${node.y}%` }}
+                    aria-label={`${node.label} ${node.tone} ${node.group}`}
+                    type="button"
+                    data-active={activeNodeId === node.id ? "true" : "false"}
+                    data-linked={linkedNodeIds.has(node.id) ? "true" : "false"}
+                    onMouseEnter={() => setActiveNodeId(node.id)}
+                    onFocus={() => setActiveNodeId(node.id)}
+                  >
+                    <span className="cc-node-halo" style={{ animationDelay: `${index * 140}ms` }} />
+                    <span className="cc-node-label" aria-hidden="true">
+                      {node.label}
+                    </span>
+                    <span className="sr-only">{node.label}</span>
+                  </button>
+                ))}
+
+                <div className="cc-universe-tooltip" role="status" aria-live="polite">
+                  <strong>{activeNodeLabel}</strong>
+                  <span>
+                    {activeNodeGroup}
+                    {activeNodeId !== "org-core" ? ` · ${activeNodeTone}` : ""}
+                  </span>
+                  <span>{activeNodeId === "org-core" ? `${repoConnections.length} active links` : `${linkedCount} linked services`}</span>
+                </div>
               </div>
-            </div>
+            ) : (
+              <Text size="sm" tone="muted">
+                Relationship preview is unavailable because topology data is not provided by the live API.
+              </Text>
+            )}
 
             <Button variant="primary" size="sm" onClick={onExploreUniverse}>
               Explore Universe
@@ -514,94 +546,112 @@ export function CommandCenterScreen({ onExploreUniverse, healthData, activitySta
                 <Heading as="h3" size="sm">
                   30-Day Health Trend
                 </Heading>
-                <Badge tone="healthy">{trendActiveScore}</Badge>
+                <Badge tone={isMockSource ? "healthy" : "unknown"}>{isMockSource ? trendActiveScore : "N/A"}</Badge>
               </div>
-              <div
-                className="cc-health-trend"
-                role="img"
-                aria-label={`Health trend over 30 days from ${trendMin} to ${trendMax}. Focused day score is ${trendActiveScore}.`}
-                onMouseMove={(event) => {
-                  const bounds = event.currentTarget.getBoundingClientRect();
-                  const clampedX = Math.max(0, Math.min(event.clientX - bounds.left, bounds.width));
-                  const ratio = bounds.width === 0 ? 1 : clampedX / bounds.width;
-                  const index = Math.round(ratio * (healthTrend30Day.length - 1));
-                  setActiveTrendIndex(index);
-                }}
-                onMouseLeave={() => setActiveTrendIndex(healthTrend30Day.length - 1)}
-              >
-                <svg viewBox="0 0 300 92" preserveAspectRatio="none" aria-hidden="true">
-                  <g className="cc-health-grid">
-                    <line x1="0" y1="10" x2="300" y2="10" />
-                    <line x1="0" y1="46" x2="300" y2="46" />
-                    <line x1="0" y1="82" x2="300" y2="82" />
-                  </g>
-                  <path className="cc-health-area" d={`${healthTrendPath} L300,92 L0,92 Z`} />
-                  <path className="cc-health-line" d={healthTrendPath} />
-                  <circle className="cc-health-marker" cx={trendActiveX} cy={trendActiveY} r="4" />
-                </svg>
-                <div className="cc-health-labels">
-                  {healthTrendLabels.map((label, idx) => (
-                    <button
-                      key={label}
-                      type="button"
-                      className="cc-health-label-button"
-                      onMouseEnter={() => setActiveTrendIndex(healthTrendKeyPoints[idx])}
-                      onFocus={() => setActiveTrendIndex(healthTrendKeyPoints[idx])}
-                    >
-                      {label}
-                    </button>
-                  ))}
+              {isMockSource ? (
+                <div
+                  className="cc-health-trend"
+                  role="img"
+                  aria-label={`Health trend over 30 days from ${trendMin} to ${trendMax}. Focused day score is ${trendActiveScore}.`}
+                  onMouseMove={(event) => {
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    const clampedX = Math.max(0, Math.min(event.clientX - bounds.left, bounds.width));
+                    const ratio = bounds.width === 0 ? 1 : clampedX / bounds.width;
+                    const index = Math.round(ratio * (healthTrend30Day.length - 1));
+                    setActiveTrendIndex(index);
+                  }}
+                  onMouseLeave={() => setActiveTrendIndex(healthTrend30Day.length - 1)}
+                >
+                  <svg viewBox="0 0 300 92" preserveAspectRatio="none" aria-hidden="true">
+                    <g className="cc-health-grid">
+                      <line x1="0" y1="10" x2="300" y2="10" />
+                      <line x1="0" y1="46" x2="300" y2="46" />
+                      <line x1="0" y1="82" x2="300" y2="82" />
+                    </g>
+                    <path className="cc-health-area" d={`${healthTrendPath} L300,92 L0,92 Z`} />
+                    <path className="cc-health-line" d={healthTrendPath} />
+                    <circle className="cc-health-marker" cx={trendActiveX} cy={trendActiveY} r="4" />
+                  </svg>
+                  <div className="cc-health-labels">
+                    {healthTrendLabels.map((label, idx) => (
+                      <button
+                        key={label}
+                        type="button"
+                        className="cc-health-label-button"
+                        onMouseEnter={() => setActiveTrendIndex(healthTrendKeyPoints[idx])}
+                        onFocus={() => setActiveTrendIndex(healthTrendKeyPoints[idx])}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <Text size="sm" tone="secondary">
+                    Day {activeTrendIndex + 1}: {trendActiveScore} health score
+                  </Text>
                 </div>
-                <Text size="sm" tone="secondary">
-                  Day {activeTrendIndex + 1}: {trendActiveScore} health score
+              ) : (
+                <Text size="sm" tone="muted">
+                  Historical trend data is unavailable from the current live API source.
                 </Text>
-              </div>
+              )}
             </Panel>
 
             <Panel tone="subtle" className="cc-achievements cc-reveal cc-reveal--intel-secondary">
               <Heading as="h3" size="sm">
                 Engineering Achievements
               </Heading>
-              <ul>
-                {achievements.map((achievement) => (
-                  <li key={achievement.id}>
-                    <div className="cc-achievement-row">
-                      <Badge tone={achievement.tone}>{achievement.title}</Badge>
-                      <Text size="sm" tone="muted">
-                        {achievement.xpGain}
+              {isMockSource ? (
+                <ul>
+                  {achievements.map((achievement) => (
+                    <li key={achievement.id}>
+                      <div className="cc-achievement-row">
+                        <Badge tone={achievement.tone}>{achievement.title}</Badge>
+                        <Text size="sm" tone="muted">
+                          {achievement.xpGain}
+                        </Text>
+                      </div>
+                      <Text size="sm" tone="secondary">
+                        {achievement.detail}
                       </Text>
-                    </div>
-                    <Text size="sm" tone="secondary">
-                      {achievement.detail}
-                    </Text>
-                    <div className="cc-achievement-progress" aria-hidden="true">
-                      <span style={{ width: `${achievement.progress}%` }} />
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                      <div className="cc-achievement-progress" aria-hidden="true">
+                        <span style={{ width: `${achievement.progress}%` }} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <Text size="sm" tone="muted">
+                  Achievement data is unavailable in live mode.
+                </Text>
+              )}
             </Panel>
 
             <Panel tone="subtle" className="cc-recent-activity cc-reveal cc-reveal--pulse">
               <Heading as="h3" size="sm">
                 Recent Engineering Activity
               </Heading>
-              <ul>
-                {resolvedRecentActivity.map((item) => (
-                  <li key={item.id}>
-                    <span className={`cc-activity-dot cc-activity-dot--${item.tone}`} aria-hidden="true" />
-                    <div>
-                      <Text size="sm">{item.event}</Text>
-                      <Text size="sm" tone="secondary">
-                        {item.context}
+              {resolvedRecentActivity.length > 0 ? (
+                <ul>
+                  {resolvedRecentActivity.map((item) => (
+                    <li key={item.id}>
+                      <span className={`cc-activity-dot cc-activity-dot--${item.tone}`} aria-hidden="true" />
+                      <div>
+                        <Text size="sm">{item.event}</Text>
+                        <Text size="sm" tone="secondary">
+                          {item.context}
+                        </Text>
+                      </div>
+                      <Text size="sm" tone="muted">
+                        {item.when}
                       </Text>
-                    </div>
-                    <Text size="sm" tone="muted">
-                      {item.when}
-                    </Text>
-                  </li>
-                ))}
-              </ul>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <Text size="sm" tone="muted">
+                  Recent engineering activity is unavailable from the current source.
+                </Text>
+              )}
             </Panel>
           </aside>
         </section>
@@ -612,31 +662,39 @@ export function CommandCenterScreen({ onExploreUniverse, healthData, activitySta
               <Heading as="h3" size="sm">
                 Organization Scan
               </Heading>
-              <Badge tone={scanComplete ? "healthy" : isScanning ? "neutral" : "unknown"}>
-                {scanComplete ? "Completed" : isScanning ? `${scanProgress}%` : "Idle"}
+              <Badge tone={isMockSource ? (scanComplete ? "healthy" : isScanning ? "neutral" : "unknown") : "unknown"}>
+                {isMockSource ? (scanComplete ? "Completed" : isScanning ? `${scanProgress}%` : "Idle") : "Unavailable"}
               </Badge>
             </div>
-            <div className="cc-scan-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={scanProgress}>
-              <span style={{ width: `${scanProgress}%` }} />
-            </div>
-            {showScanDetails ? (
-              <ul className="cc-scan-stages">
-                {scanStages.map((stage, index) => {
-                  const status =
-                    index < scanStageIndex ? "done" : index === scanStageIndex && isScanning ? "active" : scanComplete ? "done" : "pending";
-                  return (
-                    <li key={stage.id} data-status={status}>
-                      <span aria-hidden="true" />
-                      <Text size="sm" tone={status === "pending" ? "muted" : "primary"}>
-                        {stage.label}
-                      </Text>
-                    </li>
-                  );
-                })}
-              </ul>
+            {isMockSource ? (
+              <>
+                <div className="cc-scan-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={scanProgress}>
+                  <span style={{ width: `${scanProgress}%` }} />
+                </div>
+                {showScanDetails ? (
+                  <ul className="cc-scan-stages">
+                    {scanStages.map((stage, index) => {
+                      const status =
+                        index < scanStageIndex ? "done" : index === scanStageIndex && isScanning ? "active" : scanComplete ? "done" : "pending";
+                      return (
+                        <li key={stage.id} data-status={status}>
+                          <span aria-hidden="true" />
+                          <Text size="sm" tone={status === "pending" ? "muted" : "primary"}>
+                            {stage.label}
+                          </Text>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <Text size="sm" tone="secondary">
+                    Ready to run a full organization scan across repositories, security, governance, and CI/CD quality.
+                  </Text>
+                )}
+              </>
             ) : (
-              <Text size="sm" tone="secondary">
-                Ready to run a full organization scan across repositories, security, governance, and CI/CD quality.
+              <Text size="sm" tone="muted">
+                Scan progress telemetry is unavailable for the live API path.
               </Text>
             )}
           </Panel>
@@ -665,7 +723,7 @@ export function CommandCenterScreen({ onExploreUniverse, healthData, activitySta
             {resolvedActivity.hasError ? (
               <>
                 <Text size="sm" tone="secondary">
-                  Dependency audit temporarily unavailable. Last run failed at repository index stage.
+                  Live health data is currently unavailable. Review adapter issues and retry.
                 </Text>
                 <Button variant="secondary" size="sm">
                   Retry Check

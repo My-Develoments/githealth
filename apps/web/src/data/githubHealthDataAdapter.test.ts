@@ -12,6 +12,43 @@ afterEach(() => {
 });
 
 describe("fetchGitHubHealthData", () => {
+  it("preserves live source when API returns failed fetchStatus", async () => {
+    mockFetchSequence([
+      jsonResponse(buildOrganizationResponse("failed", "live", [{ code: "UPSTREAM_UNAVAILABLE", message: "GitHub upstream is unavailable." }])),
+      jsonResponse(buildRepositoryResponse("complete", [buildRepository("api-gateway", 86)], "live", []))
+    ]);
+
+    const result = await fetchGitHubHealthData();
+
+    expect(result.state).toBe("failed");
+    if (result.state === "error") {
+      throw new Error("Expected success result");
+    }
+    expect(result.data.source).toBe("live");
+    expect(result.data.fetchStatus).toBe("failed");
+    expect(result.data.adapterIssues).toEqual([
+      {
+        code: "UPSTREAM_UNAVAILABLE",
+        message: "GitHub upstream is unavailable."
+      }
+    ]);
+  });
+
+  it("preserves explicit mock source from API responses", async () => {
+    mockFetchSequence([
+      jsonResponse(buildOrganizationResponse("complete", "mock")),
+      jsonResponse(buildRepositoryResponse("complete", [buildRepository("api-gateway", 91)], "mock"))
+    ]);
+
+    const result = await fetchGitHubHealthData();
+
+    expect(result.state).toBe("ready");
+    if (result.state === "error") {
+      throw new Error("Expected success result");
+    }
+    expect(result.data.source).toBe("mock");
+  });
+
   it("returns ready state for complete responses with repositories", async () => {
     mockFetchSequence([
       jsonResponse(buildOrganizationResponse("complete")),
@@ -119,11 +156,15 @@ function jsonResponse(payload: unknown, status = 200, errorPayload?: { code: str
   });
 }
 
-function buildOrganizationResponse(fetchStatus: GitHubOrganizationScoreResponse["fetchStatus"]): GitHubOrganizationScoreResponse {
+function buildOrganizationResponse(
+  fetchStatus: GitHubOrganizationScoreResponse["fetchStatus"],
+  source: GitHubOrganizationScoreResponse["source"] = "mock",
+  adapterIssues: GitHubOrganizationScoreResponse["adapterIssues"] = []
+): GitHubOrganizationScoreResponse {
   return {
-    source: "mock",
+    source,
     fetchStatus,
-    adapterIssues: [],
+    adapterIssues,
     organization: {
       organizationId: "org-id",
       organizationName: "GitHealth Labs",
@@ -148,12 +189,14 @@ function buildOrganizationResponse(fetchStatus: GitHubOrganizationScoreResponse[
 
 function buildRepositoryResponse(
   fetchStatus: GitHubRepositoryScoresResponse["fetchStatus"],
-  repositories: ApiRepositoryScore[]
+  repositories: ApiRepositoryScore[],
+  source: GitHubRepositoryScoresResponse["source"] = "mock",
+  adapterIssues: GitHubRepositoryScoresResponse["adapterIssues"] = []
 ): GitHubRepositoryScoresResponse {
   return {
-    source: "mock",
+    source,
     fetchStatus,
-    adapterIssues: [],
+    adapterIssues,
     repositories
   };
 }

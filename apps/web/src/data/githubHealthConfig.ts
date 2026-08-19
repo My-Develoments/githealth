@@ -1,7 +1,7 @@
 import type { GitHubHealthConfig, GitHubSource } from "./githubHealthContracts";
 
 const DEFAULT_ORGANIZATION = "githealth-labs";
-const DEFAULT_SOURCE: GitHubSource = "mock";
+const DEFAULT_SOURCE: GitHubSource = "live";
 const GITHUB_ORG_SLUG_PATTERN = /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i;
 
 export function resolveGitHubHealthConfig(): GitHubHealthConfig {
@@ -41,9 +41,14 @@ function sanitizeOrganization(value: string | undefined): string {
 }
 
 function sanitizeSource(value: string | undefined): GitHubSource {
+  if (value === "mock") {
+    return "mock";
+  }
+
   if (value === "live") {
     return "live";
   }
+
   return DEFAULT_SOURCE;
 }
 

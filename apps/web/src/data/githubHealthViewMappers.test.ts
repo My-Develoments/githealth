@@ -66,6 +66,8 @@ describe("mapGitHubHealthToViewModels", () => {
 
     const mapped = mapGitHubHealthToViewModels(raw);
 
+    expect(mapped.commandCenter.source).toBe("mock");
+    expect(mapped.repositoryUniverse.source).toBe("mock");
     expect(mapped.commandCenter.score).toBe(89);
     expect(mapped.commandCenter.organization).toBe("GitHealth Labs");
     expect(mapped.commandCenter.categorySignals).toHaveLength(4);
@@ -219,6 +221,50 @@ describe("mapGitHubHealthToViewModels", () => {
       "Reduce Open Security Alerts: Patch critical dependencies first.",
       "Raise Test Coverage: Increase automated test depth."
     ]);
+  });
+
+  it("does not inject static repository metadata or topology in live mode", () => {
+    const mapped = mapGitHubHealthToViewModels({
+      ...buildBaseRawData(),
+      source: "live",
+      repositories: [
+        buildRepository({
+          repositoryId: "live-repo",
+          repositoryName: "live-repo"
+        })
+      ]
+    });
+
+    expect(mapped.repositoryUniverse.repositories).toHaveLength(1);
+
+    const repository = mapped.repositoryUniverse.repositories[0];
+    expect(repository.id).toBe("live-repo");
+    expect(repository.operationalDataAvailable).toBe(false);
+    expect(repository.trendDataAvailable).toBe(false);
+    expect(repository.lastActivity).toBe("Unavailable");
+    expect(repository.trend).toEqual([]);
+
+    expect(mapped.repositoryUniverse.connections).toEqual([]);
+    expect(mapped.repositoryUniverse.activity).toEqual([]);
+  });
+
+  it("keeps explicit mock mode demo support", () => {
+    const mapped = mapGitHubHealthToViewModels({
+      ...buildBaseRawData(),
+      source: "mock",
+      repositories: [
+        buildRepository({
+          repositoryId: "api-gateway",
+          repositoryName: "api-gateway"
+        })
+      ]
+    });
+
+    const repository = mapped.repositoryUniverse.repositories.find((value) => value.id === "api-gateway");
+    expect(repository?.operationalDataAvailable).toBe(true);
+    expect(repository?.trendDataAvailable).toBe(true);
+    expect(mapped.repositoryUniverse.connections.length).toBeGreaterThan(0);
+    expect(mapped.repositoryUniverse.activity.length).toBeGreaterThan(0);
   });
 });
 

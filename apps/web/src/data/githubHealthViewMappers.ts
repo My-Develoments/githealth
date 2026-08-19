@@ -21,11 +21,13 @@ import type {
   ApiRepositoryImportance,
   ApiRepositoryScore,
   GitHubAdapterIssue,
-  GitHubFetchStatus
+  GitHubFetchStatus,
+  GitHubSource
 } from "./githubHealthContracts";
 import type { GitHubHealthRawData } from "./githubHealthDataAdapter";
 
 export type CommandCenterHealthViewModel = {
+  source: GitHubSource;
   organization: string;
   score: number;
   scoreStatus: string;
@@ -49,6 +51,7 @@ export type CommandCenterActivityState = {
 };
 
 export type RepositoryUniverseViewModel = {
+  source: GitHubSource;
   organization: {
     name: string;
     score: number;
@@ -83,21 +86,23 @@ const RECOMMENDATION_PRIORITY_WEIGHT = {
 } as const;
 
 export function mapGitHubHealthToViewModels(raw: GitHubHealthRawData): GitHubHealthViewModels {
-  const mappedRepositories = mapRepositories(raw.repositories, raw.adapterIssues);
+  const mappedRepositories = mapRepositories(raw.repositories, raw.adapterIssues, raw.source);
 
   return {
     commandCenter: {
+      source: raw.source,
       organization: raw.organization.organizationName,
       score: clampScore(raw.organization.overallScore),
       scoreStatus: scoreStatus(raw.organization.overallScore),
       totalRepositories: mappedRepositories.length,
       pulse: buildPulse(mappedRepositories),
-      categorySignals: mapCategorySignals(raw.organization.categories),
+      categorySignals: mapCategorySignals(raw.organization.categories, raw.source),
       insights: mapInsights(raw),
       fetchStatus: raw.fetchStatus,
       adapterIssues: raw.adapterIssues
     },
     repositoryUniverse: {
+      source: raw.source,
       organization: {
         name: raw.organization.organizationName,
         score: clampScore(raw.organization.overallScore),
@@ -105,22 +110,24 @@ export function mapGitHubHealthToViewModels(raw: GitHubHealthRawData): GitHubHea
         repositories: mappedRepositories.length
       },
       repositories: mappedRepositories,
-      connections: universeConnections,
-      insights: mapUniverseInsights(mappedRepositories, raw.adapterIssues),
-      activity: universeRecentActivity,
+      connections: raw.source === "mock" ? universeConnections : [],
+      insights: mapUniverseInsights(mappedRepositories, raw.adapterIssues, raw.source),
+      activity: raw.source === "mock" ? universeRecentActivity : [],
       fetchStatus: raw.fetchStatus,
       adapterIssues: raw.adapterIssues
     }
   };
 }
 
-function mapCategorySignals(categories: ApiCategoryScore[]): typeof categorySignalDefaults {
+function mapCategorySignals(categories: ApiCategoryScore[], source: GitHubSource): typeof categorySignalDefaults {
   const byCategory = new Map(categories.map((category) => [category.category, category]));
   const orderedCategories: ApiCategoryScore["category"][] = ["security", "governance", "cicd", "quality-maintenance"];
 
   return orderedCategories.map((categoryKey) => {
     const apiCategory = byCategory.get(categoryKey);
-    const defaults = categorySignalDefaults.find((value) => value.key === CATEGORY_LABEL_MAP[categoryKey].key);
+    const defaults = source === "mock"
+      ? categorySignalDefaults.find((value) => value.key === CATEGORY_LABEL_MAP[categoryKey].key)
+      : undefined;
 
     const score = clampScore(apiCategory?.score ?? 0);
     const tone = toToneFromScore(score, apiCategory?.completeness ?? 0);
@@ -130,7 +137,7 @@ function mapCategorySignals(categories: ApiCategoryScore[]): typeof categorySign
       label: CATEGORY_LABEL_MAP[categoryKey].label,
       score,
       tone,
-      trend: defaults?.trend ?? "+0.0%",
+      trend: defaults?.trend ?? "Unavailable",
       sparkline: defaults?.sparkline ?? [score, score, score, score, score, score, score]
     };
   });
@@ -167,11 +174,27 @@ function mapInsights(raw: GitHubHealthRawData): typeof insightDefaults {
     }));
   }
 
-  return insightDefaults;
+  if (raw.source === "mock") {
+    return insightDefaults;
+  }
+
+  return [
+    {
+      id: "insights-unavailable",
+      title: "Actionable insights unavailable",
+      repositories: Math.max(1, raw.repositories.length),
+      impact: "Low",
+      tone: "neutral",
+      action: "Live source returned no recommendation signals yet."
+    }
+  ];
 }
 
-function mapRepositories(apiRepositories: ApiRepositoryScore[], adapterIssues: GitHubAdapterIssue[]): UniverseRepository[] {
-  const metadataById = new Map(universeRepositories.map((repository) => [repository.id, repository]));
+function mapRepositories(apiRepositories: ApiRepositoryScore[], adapterIssues: GitHubAdapterIssue[], source: GitHubSource): UniverseRepository[] {
+  const useMockMetadata = source === "mock";
+  const metadataById = useMockMetadata
+    ? new Map(universeRepositories.map((repository) => [repository.id, repository]))
+    : new Map<string, UniverseRepository>();
 
   const mappedApiRepositories = apiRepositories.map((repository, index) => {
     const metadata = metadataById.get(repository.repositoryId);
@@ -200,12 +223,18 @@ function mapRepositories(apiRepositories: ApiRepositoryScore[], adapterIssues: G
       pullRequests: metadata?.pullRequests ?? 0,
       securityAlerts: metadata?.securityAlerts ?? 0,
       dependencies: metadata?.dependencies ?? 0,
-      lastActivity: metadata?.lastActivity ?? "N/A",
-      trend: metadata?.trend ?? [clampScore(repository.overallScore)],
+      lastActivity: metadata?.lastActivity ?? "Unavailable",
+      trend: metadata?.trend ?? [],
+      operationalDataAvailable: Boolean(metadata),
+      trendDataAvailable: Boolean(metadata?.trend && metadata.trend.length > 0),
       topProblems: buildTopProblems(repository, adapterIssues),
       recommendations: mapRepositoryRecommendations(repository, status, adapterIssues)
     } satisfies UniverseRepository;
   });
+
+  if (!useMockMetadata) {
+    return mappedApiRepositories;
+  }
 
   const existingIds = new Set(mappedApiRepositories.map((repository) => repository.id));
   const metadataOnly = universeRepositories
@@ -218,6 +247,8 @@ function mapRepositories(apiRepositories: ApiRepositoryScore[], adapterIssues: G
       governanceScore: 0,
       cicdScore: 0,
       qualityScore: 0,
+      operationalDataAvailable: true,
+      trendDataAvailable: true,
       topProblems: ["No API score data available for this repository."],
       recommendations: ["Verify repository visibility and rerun health collection."]
     }));
@@ -389,7 +420,7 @@ function buildPulse(repositories: UniverseRepository[]): CommandCenterHealthView
   };
 }
 
-function mapUniverseInsights(repositories: UniverseRepository[], adapterIssues: GitHubAdapterIssue[]): UniverseInsight[] {
+function mapUniverseInsights(repositories: UniverseRepository[], adapterIssues: GitHubAdapterIssue[], source: GitHubSource): UniverseInsight[] {
   const ranked = [...repositories]
     .filter((repository) => repository.status !== "no-data")
     .sort((left, right) => left.healthScore - right.healthScore);
@@ -397,8 +428,37 @@ function mapUniverseInsights(repositories: UniverseRepository[], adapterIssues: 
   const highestRisk = ranked[0];
   const attentionCount = repositories.filter((repository) => repository.status === "needs-attention" || repository.status === "critical").length;
 
-  if (!highestRisk) {
+  if (!highestRisk && source === "mock") {
     return universeTopInsights;
+  }
+
+  if (!highestRisk) {
+    return [
+      {
+        id: "highest-risk",
+        label: "Highest Risk Repository",
+        value: "Unavailable",
+        tone: "no-data"
+      },
+      {
+        id: "adapter-issues",
+        label: "Adapter Issues",
+        value: adapterIssues.length > 0 ? `${adapterIssues.length} issue(s) reported` : "No adapter issues",
+        tone: adapterIssues.length > 0 ? "needs-attention" : "healthy"
+      },
+      {
+        id: "needs-attention",
+        label: "Repositories Needing Attention",
+        value: "0 repositories",
+        tone: "healthy"
+      },
+      {
+        id: "next-action",
+        label: "Recommended Next Action",
+        value: "Collect live repository scores to generate insights.",
+        tone: "no-data"
+      }
+    ];
   }
 
   return [

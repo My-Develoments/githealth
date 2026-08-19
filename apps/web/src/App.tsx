@@ -26,7 +26,7 @@ export function App() {
       onExploreUniverse={() => setScreen("repository-universe")}
       healthData={githubHealth.viewModels.commandCenter}
       activityState={githubHealth.commandCenterActivity}
-      recentActivity={commandCenterActivityFeed}
+      recentActivity={githubHealth.viewModels.commandCenter.source === "mock" ? commandCenterActivityFeed : []}
     />
   );
 }

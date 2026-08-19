@@ -140,6 +140,7 @@ export function RepositoryUniverseScreen({ onBack, viewModel, integrationState, 
 
         <div className="ru-header-actions">
           <Badge tone="neutral">{viewModel.organization.repositories} repositories</Badge>
+          <Badge tone={viewModel.source === "live" ? "healthy" : "warning"}>{`source:${viewModel.source}`}</Badge>
           <Badge tone={integrationState === "partial" ? "warning" : integrationState === "failed" || integrationState === "error" ? "critical" : "healthy"}>
             {integrationState}
           </Badge>

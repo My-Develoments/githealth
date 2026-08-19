@@ -37,7 +37,7 @@ export type GitHubRepositoryScoreResponse = {
 };
 
 function resolveSource(input?: GitHubSource): GitHubSource {
-  return input === "live" ? "live" : "mock";
+  return input === "mock" ? "mock" : "live";
 }
 
 function resolveAdapter(source: GitHubSource) {

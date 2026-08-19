@@ -131,13 +131,13 @@ describe("App navigation", () => {
   it("navigates to placeholder screens and updates the active state", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "CI / CD" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/cicd");
+      expect(window.location.pathname).toBe("/reports");
     });
 
-    expect(screen.getByRole("button", { name: "CI / CD" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("button", { name: "Reports" }).getAttribute("aria-current")).toBe("page");
   });
 
   it("preserves repository universe navigation", async () => {
@@ -227,5 +227,19 @@ describe("App navigation", () => {
     expect(screen.getByRole("heading", { name: "Governance" })).toBeTruthy();
     expect(screen.getByText("Governance Summary")).toBeTruthy();
     expect(screen.getByText("Repository Governance Context")).toBeTruthy();
+  });
+
+  it("renders the dedicated CI / CD screen for the cicd route", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "CI / CD" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/cicd");
+    });
+
+    expect(screen.getByRole("heading", { name: "CI / CD Health" })).toBeTruthy();
+    expect(screen.getByText("Delivery Summary")).toBeTruthy();
+    expect(screen.getByText("Repository Delivery Context")).toBeTruthy();
   });
 });

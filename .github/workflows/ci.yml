@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run API tests
+        run: pnpm --filter @githealth/api test
+
+      - name: Run API typecheck
+        run: pnpm --filter @githealth/api typecheck
+
+      - name: Run API build
+        run: pnpm --filter @githealth/api build
+
+  web:
+    name: Web Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Run web tests
+        run: pnpm --filter @githealth/web test
+
+      - name: Run web typecheck
+        run: pnpm --filter @githealth/web typecheck
+
+      - name: Run web build
+        run: pnpm --filter @githealth/web build
+
+  repository-hygiene:
+    name: Repository Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate whitespace and conflict markers
+        run: git diff --check
+
+      - name: Verify ignore patterns for generated artifacts
+        shell: bash
+        run: |
+          missing=0
+
+          if ! grep -qxF 'dist/' .gitignore; then
+            echo 'Missing required ignore pattern: dist/'
+            missing=1
+          fi
+
+          if ! grep -qxF '*.tsbuildinfo' .gitignore; then
+            echo 'Missing required ignore pattern: *.tsbuildinfo'
+            missing=1
+          fi
+
+          if [[ "$missing" -ne 0 ]]; then
+            echo 'Add the missing .gitignore pattern(s) listed above.'
+            exit 1
+          fi
+
+      - name: Detect tracked generated artifacts
+        shell: bash
+        run: |
+          tracked_generated="$(git ls-files | grep -E '(^|/)dist/|\.tsbuildinfo$' || true)"
+
+          if [[ -n "$tracked_generated" ]]; then
+            echo 'Tracked generated artifacts detected. Remove them from git tracking:'
+            echo "$tracked_generated"
+            echo 'Suggested fix: git rm --cached <file> and commit the cleanup.'
+            exit 1
+          fi
+
+          echo 'No tracked generated artifacts detected.'

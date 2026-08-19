@@ -255,6 +255,68 @@ describe("githubConnectionRoutes", () => {
     });
   });
 
+  it("returns a callback error when setup_action is missing", async () => {
+    configureAppMode();
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/github/connection/callback?installation_id=77`);
+      const body = await response.json() as { code: string; message: string };
+
+      expect(response.status).toBe(400);
+      expect(body.code).toBe("INVALID_REQUEST");
+      expect(body.message).toBe("Missing or invalid setup_action query parameter.");
+    });
+  });
+
+  it("returns a callback error when setup_action is invalid", async () => {
+    configureAppMode();
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/github/connection/callback?installation_id=77&setup_action=approve`);
+      const body = await response.json() as { code: string; message: string };
+
+      expect(response.status).toBe(400);
+      expect(body.code).toBe("INVALID_REQUEST");
+      expect(body.message).toBe("Missing or invalid setup_action query parameter.");
+    });
+  });
+
+  it("returns NOT_FOUND when GitHub installation is unavailable", async () => {
+    configureAppMode();
+
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.startsWith("http://127.0.0.1")) {
+        return originalFetch(input, init);
+      }
+
+      if (url.endsWith("/app/installations/77")) {
+        return new Response(
+          JSON.stringify({ message: "Not Found" }),
+          {
+            status: 404,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        );
+      }
+
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/github/connection/callback?installation_id=77&setup_action=install`);
+      const body = await response.json() as { code: string; message: string };
+
+      expect(response.status).toBe(404);
+      expect(body.code).toBe("NOT_FOUND");
+      expect(body.message).toBe("GitHub organization or repository not found.");
+    });
+  });
+
   it("rejects installations for unauthorized organizations", async () => {
     configureAppMode();
 

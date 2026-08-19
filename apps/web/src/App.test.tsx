@@ -186,4 +186,18 @@ describe("App navigation", () => {
     expect(screen.getByText("Connection Status")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Connect GitHub" })).toBeTruthy();
   });
+
+  it("renders the dedicated Organization Health screen for the health-intelligence route", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Health Intelligence" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/health-intelligence");
+    });
+
+    expect(screen.getByRole("heading", { name: "Organization Health" })).toBeTruthy();
+    expect(screen.getByText("Overall Health")).toBeTruthy();
+    expect(screen.getByText("Category Signals")).toBeTruthy();
+  });
 });

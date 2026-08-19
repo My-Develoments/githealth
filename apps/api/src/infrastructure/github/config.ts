@@ -1,7 +1,22 @@
+import { createPrivateKey } from "node:crypto";
 import { GitHubAdapterError } from "./errors.js";
 
+export type GitHubAuthProvider = "pat" | "app";
+
+export type GitHubAppConfig = {
+  appId: string;
+  privateKey: string;
+  clientId?: string;
+  clientSecret?: string;
+  installationId?: number;
+  installUrl?: string;
+  onboardingRedirectUrl?: string;
+};
+
 export type GitHubConfig = {
+  authProvider: GitHubAuthProvider;
   token?: string;
+  app?: GitHubAppConfig;
   apiBaseUrl: string;
   timeoutMs: number;
   maxRetries: number;
@@ -11,7 +26,119 @@ export type GitHubConfig = {
   signalConcurrency: number;
 };
 
+function normalizeGitHubAuthProvider(rawValue: string | undefined): GitHubAuthProvider {
+  const normalized = typeof rawValue === "string" ? rawValue.trim().toLowerCase() : "";
+  if (normalized.length === 0 || normalized === "pat") {
+    return "pat";
+  }
+
+  if (normalized === "app") {
+    return "app";
+  }
+
+  throw new GitHubAdapterError("INVALID_RESPONSE", "Invalid GITHUB_AUTH_PROVIDER value.", 500);
+}
+
+function parseRequiredString(rawValue: string | undefined, envName: string): string {
+  const normalized = typeof rawValue === "string" ? rawValue.trim() : "";
+  if (normalized.length === 0) {
+    throw new GitHubAdapterError("INVALID_RESPONSE", `Invalid ${envName} value.`, 500);
+  }
+
+  return normalized;
+}
+
+function parseOptionalString(rawValue: string | undefined): string | undefined {
+  if (typeof rawValue !== "string") {
+    return undefined;
+  }
+
+  const normalized = rawValue.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function parseOptionalPositiveInteger(rawValue: string | undefined, envName: string): number | undefined {
+  const normalized = parseOptionalString(rawValue);
+  if (!normalized) {
+    return undefined;
+  }
+
+  const value = Number(normalized);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new GitHubAdapterError("INVALID_RESPONSE", `Invalid ${envName} value.`, 500);
+  }
+
+  return value;
+}
+
+function normalizePrivateKey(value: string): string {
+  return value.replace(/\\n/g, "\n");
+}
+
+function validatePrivateKey(privateKey: string): string {
+  try {
+    createPrivateKey(privateKey);
+  } catch {
+    throw new GitHubAdapterError("INVALID_RESPONSE", "Invalid GITHUB_APP_PRIVATE_KEY value.", 500);
+  }
+
+  return privateKey;
+}
+
+function parseOptionalHttpUrl(rawValue: string | undefined, envName: string): string | undefined {
+  const normalized = parseOptionalString(rawValue);
+  if (!normalized) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      throw new Error("Unsupported protocol");
+    }
+
+    return parsed.toString();
+  } catch {
+    throw new GitHubAdapterError("INVALID_RESPONSE", `Invalid ${envName} value.`, 500);
+  }
+}
+
+function buildGitHubAppConfig(): GitHubAppConfig {
+  const appId = parseRequiredString(process.env.GITHUB_APP_ID, "GITHUB_APP_ID");
+  const privateKey = validatePrivateKey(
+    normalizePrivateKey(parseRequiredString(process.env.GITHUB_APP_PRIVATE_KEY, "GITHUB_APP_PRIVATE_KEY"))
+  );
+  const installationId = parseOptionalPositiveInteger(
+    process.env.GITHUB_APP_INSTALLATION_ID,
+    "GITHUB_APP_INSTALLATION_ID"
+  );
+  const installUrl = parseOptionalHttpUrl(process.env.GITHUB_APP_INSTALL_URL, "GITHUB_APP_INSTALL_URL");
+
+  if (!installationId && !installUrl) {
+    throw new GitHubAdapterError(
+      "INVALID_RESPONSE",
+      "GitHub App mode requires GITHUB_APP_INSTALLATION_ID or GITHUB_APP_INSTALL_URL.",
+      500
+    );
+  }
+
+  return {
+    appId,
+    privateKey,
+    clientId: parseOptionalString(process.env.GITHUB_APP_CLIENT_ID),
+    clientSecret: parseOptionalString(process.env.GITHUB_APP_CLIENT_SECRET),
+    installationId,
+    installUrl,
+    onboardingRedirectUrl: parseOptionalHttpUrl(
+      process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL,
+      "GITHUB_APP_ONBOARDING_REDIRECT_URL"
+    )
+  };
+}
+
 export function getGitHubConfig(): GitHubConfig {
+  const authProvider = normalizeGitHubAuthProvider(process.env.GITHUB_AUTH_PROVIDER);
+
   const rawToken = process.env.GITHUB_TOKEN;
   const token = typeof rawToken === "string" && rawToken.trim().length > 0
     ? rawToken.trim()
@@ -61,8 +188,12 @@ export function getGitHubConfig(): GitHubConfig {
     throw new GitHubAdapterError("INVALID_RESPONSE", "Invalid GITHUB_SIGNAL_CONCURRENCY value.", 500);
   }
 
+  const app = authProvider === "app" ? buildGitHubAppConfig() : undefined;
+
   return {
+    authProvider,
     token,
+    app,
     apiBaseUrl,
     timeoutMs,
     maxRetries,

@@ -17,7 +17,44 @@ import type {
   CommandCenterActivityState,
   CommandCenterHealthViewModel
 } from "../data/githubHealthViewMappers";
+import type { GitHubConnectionViewModel } from "../data/githubHealthContracts";
 import "./command-center.css";
+
+function resolveConnectionTone(status: GitHubConnectionViewModel["status"]): "healthy" | "warning" | "neutral" | "critical" | "unknown" {
+  if (status === "connected") {
+    return "healthy";
+  }
+
+  if (status === "ready_to_connect" || status === "connecting") {
+    return "neutral";
+  }
+
+  if (status === "error") {
+    return "critical";
+  }
+
+  return "unknown";
+}
+
+function resolveConnectionLabel(connection: GitHubConnectionViewModel): string {
+  if (connection.status === "not_configured") {
+    return "Not configured";
+  }
+
+  if (connection.status === "ready_to_connect") {
+    return "Ready to connect";
+  }
+
+  if (connection.status === "connecting") {
+    return "Connecting";
+  }
+
+  if (connection.status === "connected") {
+    return "Connected";
+  }
+
+  return "Connection error";
+}
 
 function impactTone(impact: "High" | "Medium" | "Low"): "critical" | "warning" | "neutral" {
   if (impact === "High") {
@@ -112,11 +149,13 @@ type CommandCenterScreenProps = {
   onExploreUniverse?: () => void;
   healthData?: CommandCenterHealthViewModel;
   activityState?: CommandCenterActivityState;
+  connection?: GitHubConnectionViewModel;
   integrationError?: {
     message: string;
     code: string;
     status: number;
   } | null;
+  onConnectGitHub?: () => void | Promise<void>;
   onRetry?: () => void;
   recentActivity?: typeof recentEngineeringActivityDefaults;
 };
@@ -181,9 +220,29 @@ const unavailableHealthViewModel: CommandCenterHealthViewModel = {
   adapterIssues: []
 };
 
-export function CommandCenterScreen({ onExploreUniverse, healthData, activityState, integrationError, onRetry, recentActivity }: CommandCenterScreenProps) {
+export function CommandCenterScreen({
+  onExploreUniverse,
+  healthData,
+  activityState,
+  connection,
+  integrationError,
+  onConnectGitHub,
+  onRetry,
+  recentActivity
+}: CommandCenterScreenProps) {
   const resolvedHealth: CommandCenterHealthViewModel = healthData ?? unavailableHealthViewModel;
   const isMockSource = resolvedHealth.source === "mock";
+  const resolvedConnection: GitHubConnectionViewModel =
+    connection ?? {
+      provider: isMockSource ? "pat" : "app",
+      status: isMockSource ? "connected" : "not_configured",
+      isConnected: isMockSource,
+      canConnect: false,
+      hasInstallationId: false,
+      installUrlConfigured: false,
+      callbackRedirectConfigured: false,
+      message: isMockSource ? "Mock GitHub source is active." : "GitHub connection is unavailable."
+    };
 
   const resolvedActivity: CommandCenterActivityState =
     activityState ??
@@ -706,6 +765,34 @@ export function CommandCenterScreen({ onExploreUniverse, healthData, activitySta
         </section>
 
         <section className="cc-states cc-reveal cc-reveal--states" aria-label="Operational states">
+          <Panel tone="subtle" className="cc-state-card">
+            <div className="cc-state-header">
+              <Heading as="h3" size="sm">
+                GitHub Connection
+              </Heading>
+              <Badge tone={resolveConnectionTone(resolvedConnection.status)}>{resolveConnectionLabel(resolvedConnection)}</Badge>
+            </div>
+            <Text size="sm" tone="secondary">
+              {resolvedConnection.message}
+            </Text>
+            <Text size="sm" tone="muted">
+              Provider: {resolvedConnection.provider === "app" ? "GitHub App" : "Personal access token"}
+            </Text>
+            {resolvedConnection.provider === "app" && !resolvedConnection.isConnected && resolvedConnection.canConnect ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  void onConnectGitHub?.();
+                }}
+                disabled={resolvedConnection.status === "connecting"}
+                aria-label="Connect GitHub"
+              >
+                {resolvedConnection.status === "connecting" ? "Connecting..." : "Connect GitHub"}
+              </Button>
+            ) : null}
+          </Panel>
+
           <Panel tone="subtle" className="cc-state-card cc-state-card--scan">
             <div className="cc-state-header">
               <Heading as="h3" size="sm">
@@ -769,13 +856,13 @@ export function CommandCenterScreen({ onExploreUniverse, healthData, activitySta
             <Heading as="h3" size="sm">
               Error Recovery
             </Heading>
-            {resolvedActivity.hasError ? (
+            {resolvedActivity.hasError || resolvedConnection.status === "error" ? (
               <>
                 <Text size="sm" tone="secondary">
-                  {errorGuidance.title}
+                  {resolvedConnection.status === "error" ? "GitHub connection setup needs attention." : errorGuidance.title}
                 </Text>
                 <Text size="sm" tone="muted">
-                  {errorGuidance.action}
+                  {resolvedConnection.status === "error" ? resolvedConnection.message : errorGuidance.action}
                 </Text>
                 <Button variant="secondary" size="sm" onClick={onRetry} aria-label="Retry health check">
                   Retry Check

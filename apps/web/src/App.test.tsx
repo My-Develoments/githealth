@@ -131,13 +131,13 @@ describe("App navigation", () => {
   it("navigates to placeholder screens and updates the active state", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(screen.getByRole("button", { name: "Governance" }));
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/security");
+      expect(window.location.pathname).toBe("/governance");
     });
 
-    expect(screen.getByRole("button", { name: "Security" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("button", { name: "Governance" }).getAttribute("aria-current")).toBe("page");
   });
 
   it("preserves repository universe navigation", async () => {
@@ -199,5 +199,19 @@ describe("App navigation", () => {
     expect(screen.getByRole("heading", { name: "Organization Health" })).toBeTruthy();
     expect(screen.getByText("Overall Health")).toBeTruthy();
     expect(screen.getByText("Category Signals")).toBeTruthy();
+  });
+
+  it("renders the dedicated Security Posture screen for the security route", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/security");
+    });
+
+    expect(screen.getByRole("heading", { name: "Security Posture" })).toBeTruthy();
+    expect(screen.getByText("Security Summary")).toBeTruthy();
+    expect(screen.getByText("Repository Security Context")).toBeTruthy();
   });
 });

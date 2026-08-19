@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { commandCenterActivityFeed, useGitHubHealthData } from "./data/useGitHubHealthData";
 import { appRoutes, resolvePathForScreen, resolveScreenFromPath, type AppScreen } from "./navigation";
 import { CommandCenterScreen } from "./screens/CommandCenterScreen";
+import { GitHubSettingsScreen } from "./screens/GitHubSettingsScreen";
 import { RepositoryUniverseScreen } from "./screens/RepositoryUniverse/RepositoryUniverseScreen";
 import { SectionPlaceholderScreen } from "./screens/SectionPlaceholderScreen";
 
@@ -47,6 +48,29 @@ export function App() {
         viewModel={githubHealth.viewModels.repositoryUniverse}
         integrationState={githubHealth.state}
         integrationError={githubHealth.error}
+        onRetry={githubHealth.reload}
+      />
+    );
+  }
+
+  if (screen === "settings") {
+    const commandCenterView = githubHealth.viewModels.commandCenter;
+    const connectedOrganization =
+      commandCenterView.source === "live" &&
+      githubHealth.connection.isConnected &&
+      commandCenterView.organization !== "Unavailable"
+        ? commandCenterView.organization
+        : undefined;
+
+    return (
+      <GitHubSettingsScreen
+        activeNavId={screen}
+        onNavigate={navigateTo}
+        connection={githubHealth.connection}
+        integrationState={githubHealth.state}
+        integrationError={githubHealth.error}
+        connectedOrganization={connectedOrganization}
+        onConnectGitHub={githubHealth.connectGitHub}
         onRetry={githubHealth.reload}
       />
     );

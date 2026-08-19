@@ -172,4 +172,18 @@ describe("App navigation", () => {
 
     expect(screen.getByRole("button", { name: "Reports" }).getAttribute("aria-current")).toBe("page");
   });
+
+  it("renders the functional GitHub settings screen instead of a generic placeholder", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/settings");
+    });
+
+    expect(screen.getAllByRole("heading", { name: "GitHub Settings" }).length).toBeGreaterThan(0);
+    expect(screen.getByText("Connection Status")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Connect GitHub" })).toBeTruthy();
+  });
 });

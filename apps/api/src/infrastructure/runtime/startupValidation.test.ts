@@ -17,6 +17,7 @@ describe("validateStartupConfiguration", () => {
   const previousAllowedGitHubOrgs = process.env.ALLOWED_GITHUB_ORGS;
   const previousWindowMs = process.env.GITHUB_ENDPOINT_RATE_LIMIT_WINDOW_MS;
   const previousMaxRequests = process.env.GITHUB_ENDPOINT_RATE_LIMIT_MAX_REQUESTS;
+  const previousCacheTtlMs = process.env.GITHUB_SCORE_CACHE_TTL_MS;
 
   afterEach(() => {
     restoreEnv("PORT", previousPort);
@@ -25,6 +26,7 @@ describe("validateStartupConfiguration", () => {
     restoreEnv("ALLOWED_GITHUB_ORGS", previousAllowedGitHubOrgs);
     restoreEnv("GITHUB_ENDPOINT_RATE_LIMIT_WINDOW_MS", previousWindowMs);
     restoreEnv("GITHUB_ENDPOINT_RATE_LIMIT_MAX_REQUESTS", previousMaxRequests);
+    restoreEnv("GITHUB_SCORE_CACHE_TTL_MS", previousCacheTtlMs);
   });
 
   it("throws for invalid port", () => {
@@ -53,8 +55,18 @@ describe("validateStartupConfiguration", () => {
     process.env.ALLOWED_GITHUB_ORGS = "githealth-labs";
     process.env.GITHUB_ENDPOINT_RATE_LIMIT_WINDOW_MS = "60000";
     process.env.GITHUB_ENDPOINT_RATE_LIMIT_MAX_REQUESTS = "60";
+    process.env.GITHUB_SCORE_CACHE_TTL_MS = "30000";
     process.env.GITHUB_API_BASE_URL = "https://api.github.com";
 
     expect(() => validateStartupConfiguration()).not.toThrow();
+  });
+
+  it("throws for invalid cache TTL", () => {
+    process.env.PORT = "4000";
+    process.env.API_AUTH_TOKEN = "issue23-token";
+    process.env.GITHUB_API_BASE_URL = "https://api.github.com";
+    process.env.GITHUB_SCORE_CACHE_TTL_MS = "0";
+
+    expect(() => validateStartupConfiguration()).toThrow("Invalid GITHUB_SCORE_CACHE_TTL_MS value.");
   });
 });

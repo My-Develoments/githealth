@@ -1,6 +1,15 @@
 import express from "express";
 import { afterEach, describe, expect, it } from "vitest";
-import { localDevelopmentCors } from "./localDevelopmentCors.js";
+import { isLocalDevelopmentCorsEnabled, localDevelopmentCors } from "./localDevelopmentCors.js";
+
+function restoreEnv(name: string, previous: string | undefined): void {
+  if (typeof previous === "undefined") {
+    delete process.env[name];
+    return;
+  }
+
+  process.env[name] = previous;
+}
 
 async function withServer<T>(run: (baseUrl: string) => Promise<T>): Promise<T> {
   const app = express();
@@ -37,8 +46,10 @@ async function withServer<T>(run: (baseUrl: string) => Promise<T>): Promise<T> {
 }
 
 describe("localDevelopmentCors", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+
   afterEach(() => {
-    // No shared state.
+    restoreEnv("NODE_ENV", previousNodeEnv);
   });
 
   it("allows local development origins to read GET responses", async () => {
@@ -88,5 +99,30 @@ describe("localDevelopmentCors", () => {
       expect(response.headers.get("access-control-allow-methods")).toBeNull();
       expect(response.headers.get("access-control-allow-headers")).toBeNull();
     });
+  });
+
+  it("disables local development cors behavior in production mode", async () => {
+    process.env.NODE_ENV = "production";
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/health`, {
+        headers: {
+          Origin: "http://localhost:5174"
+        }
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      expect(response.headers.get("access-control-allow-methods")).toBeNull();
+      expect(response.headers.get("access-control-allow-headers")).toBeNull();
+    });
+  });
+
+  it("reports whether dev cors should be enabled", () => {
+    process.env.NODE_ENV = "production";
+    expect(isLocalDevelopmentCorsEnabled()).toBe(false);
+
+    process.env.NODE_ENV = "development";
+    expect(isLocalDevelopmentCorsEnabled()).toBe(true);
   });
 });

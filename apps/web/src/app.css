@@ -19,3 +19,50 @@ button,
 input {
   font: inherit;
 }
+
+.app-error-boundary {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(900px 420px at 50% 0%, rgba(58, 123, 255, 0.2), transparent 60%),
+    linear-gradient(180deg, #040913 0%, #050b17 100%);
+}
+
+.app-error-boundary__panel {
+  width: min(100%, 560px);
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+  border-radius: 20px;
+  border: 1px solid rgba(234, 243, 255, 0.12);
+  background: rgba(8, 14, 25, 0.92);
+  box-shadow: 0 18px 50px rgba(2, 8, 18, 0.42);
+}
+
+.app-error-boundary__panel h1 {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.1;
+}
+
+.app-error-boundary__panel p {
+  margin: 0;
+  color: rgba(234, 243, 255, 0.8);
+}
+
+.app-error-boundary__panel button {
+  justify-self: start;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid rgba(77, 215, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(77, 215, 255, 0.14);
+  color: inherit;
+  cursor: pointer;
+}
+
+.app-error-boundary__panel button:hover {
+  background: rgba(77, 215, 255, 0.2);
+}

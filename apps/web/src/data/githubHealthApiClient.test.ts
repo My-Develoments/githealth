@@ -8,9 +8,7 @@ afterEach(() => {
 });
 
 describe("requestJson", () => {
-  it("sends the optional bearer token and accepts json", async () => {
-    vi.stubEnv("VITE_API_AUTH_TOKEN", "test-api-token");
-
+  it("sends only default json headers by default", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -26,14 +24,11 @@ describe("requestJson", () => {
     expect(result).toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
-      Accept: "application/json",
-      Authorization: "Bearer test-api-token"
+      Accept: "application/json"
     });
   });
 
-  it("merges custom request headers with the API bearer token", async () => {
-    vi.stubEnv("VITE_API_AUTH_TOKEN", "test-api-token");
-
+  it("merges custom request headers without adding browser auth tokens", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -52,13 +47,12 @@ describe("requestJson", () => {
 
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
       Accept: "application/json",
-      Authorization: "Bearer test-api-token",
       "x-github-app-session": "opaque-install-session"
     });
   });
 
-  it("keeps the request unauthenticated when no token is configured", async () => {
-    vi.stubEnv("VITE_API_AUTH_TOKEN", "");
+  it("ignores deprecated Vite auth token configuration even if present", async () => {
+    vi.stubEnv("VITE_API_AUTH_TOKEN", "test-api-token");
 
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {
@@ -78,8 +72,6 @@ describe("requestJson", () => {
   });
 
   it("preserves existing request and error handling", async () => {
-    vi.stubEnv("VITE_API_AUTH_TOKEN", "test-api-token");
-
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ code: "PERMISSION_DENIED", message: "Forbidden" }), {
         status: 403,

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { validateStartupConfiguration } from "./startupValidation.js";
+import { getStartupValidationStatus, resetStartupValidationStatusForTests, validateStartupConfiguration } from "./startupValidation.js";
 
 function restoreEnv(name: string, previous: string | undefined): void {
   if (typeof previous === "undefined") {
@@ -24,6 +24,7 @@ describe("validateStartupConfiguration", () => {
   const previousAppInstallUrl = process.env.GITHUB_APP_INSTALL_URL;
 
   afterEach(() => {
+    resetStartupValidationStatusForTests();
     restoreEnv("PORT", previousPort);
     restoreEnv("GITHUB_AUTH_PROVIDER", previousProvider);
     restoreEnv("GITHUB_API_BASE_URL", previousApiBase);
@@ -40,6 +41,7 @@ describe("validateStartupConfiguration", () => {
   it("throws for invalid port", () => {
     process.env.PORT = "-1";
     expect(() => validateStartupConfiguration()).toThrow("Invalid PORT value");
+    expect(getStartupValidationStatus()).toBe("error");
   });
 
   it("throws for invalid GitHub API base URL", () => {
@@ -67,6 +69,7 @@ describe("validateStartupConfiguration", () => {
     process.env.GITHUB_API_BASE_URL = "https://api.github.com";
 
     expect(() => validateStartupConfiguration()).not.toThrow();
+    expect(getStartupValidationStatus()).toBe("ok");
   });
 
   it("throws for invalid cache TTL", () => {

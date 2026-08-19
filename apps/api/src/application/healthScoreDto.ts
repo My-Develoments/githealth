@@ -5,6 +5,7 @@ import type {
   RepositoryHealthScore,
   ValidationIssue
 } from "../domain/health/types.js";
+import type { GitHubNormalizedRepository } from "./githubNormalizedModels.js";
 
 export type ApiValidationIssue = {
   scope: ValidationIssue["scope"];
@@ -36,6 +37,56 @@ export type ApiCategoryScore = {
   metricsMissing: number;
 };
 
+export type ApiWorkflowRunStatus =
+  | "queued"
+  | "in_progress"
+  | "completed"
+  | "requested"
+  | "waiting"
+  | "pending"
+  | "unknown";
+
+export type ApiWorkflowRunConclusion =
+  | "success"
+  | "failure"
+  | "cancelled"
+  | "timed_out"
+  | "action_required"
+  | "startup_failure"
+  | "neutral"
+  | "skipped"
+  | "stale"
+  | "unknown";
+
+export type ApiWorkflowRunContext = {
+  id?: number;
+  name: string;
+  status: ApiWorkflowRunStatus;
+  conclusion?: ApiWorkflowRunConclusion;
+  event?: string;
+  branch?: string;
+  runNumber?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  url?: string;
+};
+
+export type ApiRepositoryCicdTelemetry = {
+  ciSuccessRate?: number;
+  deploymentFrequencyWeekly?: number;
+  workflowFailureRate?: number;
+  runSummary: {
+    totalRuns: number;
+    completedRuns: number;
+    successCount: number;
+    failureCount: number;
+    successRate?: number;
+    failureRate?: number;
+    latestRunAt?: string;
+  };
+  recentRuns: ApiWorkflowRunContext[];
+};
+
 export type ApiRepositoryScore = {
   repositoryId: string;
   repositoryName: string;
@@ -47,6 +98,7 @@ export type ApiRepositoryScore = {
   negativeContributors: ApiScoreContributor[];
   recommendations: ApiRecommendation[];
   validationIssues: ApiValidationIssue[];
+  cicdTelemetry?: ApiRepositoryCicdTelemetry;
 };
 
 export type ApiOrganizationScore = {
@@ -102,7 +154,42 @@ function mapRecommendations(source: RepositoryHealthScore["recommendations"] | O
   }));
 }
 
-export function toApiRepositoryScore(source: RepositoryHealthScore): ApiRepositoryScore {
+function mapRepositoryCicdTelemetry(repository: GitHubNormalizedRepository | undefined): ApiRepositoryCicdTelemetry | undefined {
+  if (!repository) {
+    return undefined;
+  }
+
+  const runSummary = repository.cicdTelemetry?.runSummary;
+  const recentRuns = repository.cicdTelemetry?.recentRuns;
+
+  if (!runSummary && (!recentRuns || recentRuns.length === 0)) {
+    return undefined;
+  }
+
+  return {
+    ciSuccessRate: typeof repository.metrics.ci_success_rate === "number" ? repository.metrics.ci_success_rate : undefined,
+    deploymentFrequencyWeekly:
+      typeof repository.metrics.deployment_frequency_weekly === "number"
+        ? repository.metrics.deployment_frequency_weekly
+        : undefined,
+    workflowFailureRate:
+      typeof repository.metrics.workflow_failure_rate === "number"
+        ? repository.metrics.workflow_failure_rate
+        : undefined,
+    runSummary: {
+      totalRuns: runSummary?.totalRuns ?? 0,
+      completedRuns: runSummary?.completedRuns ?? 0,
+      successCount: runSummary?.successCount ?? 0,
+      failureCount: runSummary?.failureCount ?? 0,
+      successRate: runSummary?.successRate,
+      failureRate: runSummary?.failureRate,
+      latestRunAt: runSummary?.latestRunAt
+    },
+    recentRuns: recentRuns ?? []
+  };
+}
+
+export function toApiRepositoryScore(source: RepositoryHealthScore, repository?: GitHubNormalizedRepository): ApiRepositoryScore {
   return {
     repositoryId: source.repositoryId,
     repositoryName: source.repositoryName,
@@ -113,7 +200,8 @@ export function toApiRepositoryScore(source: RepositoryHealthScore): ApiReposito
     positiveContributors: mapContributors(source.positiveContributors),
     negativeContributors: mapContributors(source.negativeContributors),
     recommendations: mapRecommendations(source.recommendations),
-    validationIssues: source.validationIssues.map(mapValidationIssue)
+    validationIssues: source.validationIssues.map(mapValidationIssue),
+    cicdTelemetry: mapRepositoryCicdTelemetry(repository)
   };
 }
 

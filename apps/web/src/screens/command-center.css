@@ -637,7 +637,8 @@
 
 .chs-signal-list,
 .chs-insight-list,
-.chs-repo-list {
+.chs-repo-list,
+.chs-run-list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -647,11 +648,35 @@
 
 .chs-signal-list li,
 .chs-insight-list li,
-.chs-repo-list li {
+.chs-repo-list li,
+.chs-run-list li {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   align-items: flex-start;
+  border: 1px solid rgba(234, 243, 255, 0.12);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(10, 17, 29, 0.54);
+}
+
+.chs-run-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.chs-telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  font-family: var(--gh-font-mono);
+  font-size: 12px;
+  color: var(--gh-color-text-muted);
+}
+
+.chs-telemetry-grid span {
   border: 1px solid rgba(234, 243, 255, 0.12);
   border-radius: 10px;
   padding: 8px;
@@ -667,6 +692,8 @@
 .chs-state,
 .chs-repos,
 .chs-insights,
+.chs-telemetry,
+.chs-runs,
 .chs-limitations {
   grid-column: 1 / -1;
 }

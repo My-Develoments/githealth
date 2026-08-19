@@ -227,6 +227,7 @@ function mapRepositories(apiRepositories: ApiRepositoryScore[], adapterIssues: G
       trend: metadata?.trend ?? [],
       operationalDataAvailable: Boolean(metadata),
       trendDataAvailable: Boolean(metadata?.trend && metadata.trend.length > 0),
+      cicdTelemetry: repository.cicdTelemetry,
       topProblems: buildTopProblems(repository, adapterIssues),
       recommendations: mapRepositoryRecommendations(repository, status, adapterIssues)
     } satisfies UniverseRepository;

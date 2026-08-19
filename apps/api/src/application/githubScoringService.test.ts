@@ -77,6 +77,8 @@ describe("githubScoringService", () => {
     const missing = await getGitHubRepositoryScoreById("githealth-labs", "does-not-exist", "mock");
 
     expect(found.repository?.repositoryId).toBe("frontend-web");
+    expect(found.repository?.cicdTelemetry?.runSummary.totalRuns).toBe(4);
+    expect(found.repository?.cicdTelemetry?.recentRuns[0]?.name).toBe("build-and-test");
     expect(missing.repository).toBeNull();
   });
 

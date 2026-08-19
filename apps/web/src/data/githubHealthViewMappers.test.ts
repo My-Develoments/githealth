@@ -59,7 +59,33 @@ describe("mapGitHubHealthToViewModels", () => {
               priority: "medium"
             }
           ],
-          validationIssues: []
+          validationIssues: [],
+          cicdTelemetry: {
+            ciSuccessRate: 85,
+            deploymentFrequencyWeekly: 4.2,
+            workflowFailureRate: 15,
+            runSummary: {
+              totalRuns: 3,
+              completedRuns: 3,
+              successCount: 2,
+              failureCount: 1,
+              successRate: 66.67,
+              failureRate: 33.33,
+              latestRunAt: "2026-02-05T10:45:00.000Z"
+            },
+            recentRuns: [
+              {
+                id: 1,
+                name: "build",
+                status: "completed",
+                conclusion: "success",
+                event: "push",
+                branch: "main",
+                runNumber: 22,
+                createdAt: "2026-02-05T10:45:00.000Z"
+              }
+            ]
+          }
         }
       ]
     };
@@ -78,6 +104,8 @@ describe("mapGitHubHealthToViewModels", () => {
     const apiGateway = mapped.repositoryUniverse.repositories.find((repository) => repository.id === "api-gateway");
     expect(apiGateway?.status).toBe("needs-attention");
     expect(apiGateway?.importance).toBe("important");
+    expect(apiGateway?.cicdTelemetry?.runSummary.totalRuns).toBe(3);
+    expect(apiGateway?.cicdTelemetry?.recentRuns[0]?.name).toBe("build");
 
     const metadataOnlyNode = mapped.repositoryUniverse.repositories.find((repository) => repository.id === "frontend-web");
     expect(metadataOnlyNode?.status).toBe("no-data");

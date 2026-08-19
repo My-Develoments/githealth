@@ -5,7 +5,15 @@ import { GitHubAdapterError, normalizeGitHubHttpError } from "../errors.js";
 import { resolveGitHubAccessToken } from "../appAuth.js";
 import { getGitHubConfig, type GitHubConfig } from "../config.js";
 import { runWithRateLimitRetry } from "../rateLimit.js";
-import type { GitHubOrganizationSlice, GitHubRepositorySignalInput, GitHubRepositorySlice } from "../types.js";
+import type {
+  GitHubOrganizationSlice,
+  GitHubRepositorySignalInput,
+  GitHubRepositorySlice,
+  GitHubWorkflowRunConclusion,
+  GitHubWorkflowRunContext,
+  GitHubWorkflowRunStatus,
+  GitHubWorkflowTelemetrySlice
+} from "../types.js";
 
 type RepositoryListItem = {
   name: string;
@@ -23,9 +31,16 @@ type ProtectionResponse = {
 };
 
 type WorkflowRun = {
+  id?: number;
   name?: string;
+  status?: string;
   conclusion?: string;
+  event?: string;
+  head_branch?: string;
+  run_number?: number;
+  html_url?: string;
   created_at?: string;
+  updated_at?: string;
 };
 
 type WorkflowRunsResponse = {
@@ -146,12 +161,95 @@ function computeDependabotAlertAgeDays(alerts: DependabotAlert[] | undefined): n
 }
 
 function workflowFailureRate(runs: WorkflowRun[]): number | undefined {
-  if (runs.length === 0) {
+  const completed = runs.filter(
+    (run) => (run.status === "completed" || typeof run.status === "undefined") && typeof run.conclusion === "string"
+  );
+  if (completed.length === 0) {
     return undefined;
   }
 
-  const failedRuns = runs.filter((run) => run.conclusion && run.conclusion !== "success").length;
-  return clamp((failedRuns / runs.length) * 100, 0, 100);
+  const failedRuns = completed.filter((run) => {
+    const conclusion = toConclusion(run.conclusion);
+    return conclusion === "failure" || conclusion === "timed_out" || conclusion === "startup_failure" || conclusion === "action_required";
+  }).length;
+
+  return clamp((failedRuns / completed.length) * 100, 0, 100);
+}
+
+function toStatus(value: string | undefined): GitHubWorkflowRunStatus {
+  if (value === "queued" || value === "in_progress" || value === "completed" || value === "requested" || value === "waiting" || value === "pending") {
+    return value;
+  }
+
+  return "unknown";
+}
+
+function toConclusion(value: string | undefined): GitHubWorkflowRunConclusion {
+  if (
+    value === "success" ||
+    value === "failure" ||
+    value === "cancelled" ||
+    value === "timed_out" ||
+    value === "action_required" ||
+    value === "startup_failure" ||
+    value === "neutral" ||
+    value === "skipped" ||
+    value === "stale"
+  ) {
+    return value;
+  }
+
+  return "unknown";
+}
+
+function buildWorkflowTelemetry(runs: WorkflowRun[]): GitHubWorkflowTelemetrySlice {
+  const completed = runs.filter(
+    (run) => (run.status === "completed" || typeof run.status === "undefined") && typeof run.conclusion === "string"
+  );
+  const successCount = completed.filter((run) => toConclusion(run.conclusion) === "success").length;
+  const failureCount = completed.filter((run) => {
+    const conclusion = toConclusion(run.conclusion);
+    return conclusion === "failure" || conclusion === "timed_out" || conclusion === "startup_failure" || conclusion === "action_required";
+  }).length;
+  const consideredRuns = successCount + failureCount;
+
+  const latestRunAt = runs
+    .map((run) => toDate(run.created_at))
+    .filter((value): value is number => typeof value === "number")
+    .sort((left, right) => right - left)[0];
+
+  const recentRuns: GitHubWorkflowRunContext[] = [...runs]
+    .sort((left, right) => {
+      const leftTs = toDate(left.created_at) ?? 0;
+      const rightTs = toDate(right.created_at) ?? 0;
+      return rightTs - leftTs;
+    })
+    .slice(0, 8)
+    .map((run) => ({
+      id: typeof run.id === "number" ? run.id : undefined,
+      name: run.name?.trim() || "Unnamed workflow",
+      status: toStatus(run.status),
+      conclusion: run.conclusion ? toConclusion(run.conclusion) : undefined,
+      event: run.event,
+      branch: run.head_branch,
+      runNumber: run.run_number,
+      createdAt: run.created_at,
+      updatedAt: run.updated_at,
+      url: run.html_url
+    }));
+
+  return {
+    runSummary: {
+      totalRuns: runs.length,
+      completedRuns: completed.length,
+      successCount,
+      failureCount,
+      successRate: consideredRuns > 0 ? clamp((successCount / consideredRuns) * 100, 0, 100) : undefined,
+      failureRate: consideredRuns > 0 ? clamp((failureCount / consideredRuns) * 100, 0, 100) : undefined,
+      latestRunAt: typeof latestRunAt === "number" ? new Date(latestRunAt).toISOString() : undefined
+    },
+    recentRuns
+  };
 }
 
 function safeName(value: string): string {
@@ -462,7 +560,7 @@ async function mapRepositorySlice(
 
   const dependabotOpenPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/dependabot/alerts?state=open`;
   const dependabotFixedPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/dependabot/alerts?state=fixed`;
-  const workflowRunsPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/actions/runs?status=completed`;
+  const workflowRunsPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/actions/runs`;
   const codeScanningAlertsPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/code-scanning/alerts?state=open`;
   const pullRequestsPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/pulls?state=open&sort=created&direction=desc`;
   const issuesPath = `${config.apiBaseUrl}/repos/${safeName(organization)}/${repoName}/issues?state=open&sort=created&direction=asc`;
@@ -603,6 +701,7 @@ async function mapRepositorySlice(
   }
 
   const workflowStats = computeWorkflowStats(workflowRuns ?? []);
+  const workflowTelemetry = buildWorkflowTelemetry(workflowRuns ?? []);
 
   let vulnerabilitiesTotal: number | undefined;
   let vulnerabilitiesResolved: number | undefined;
@@ -671,7 +770,8 @@ async function mapRepositorySlice(
       cicd: {
         ciSuccessRate: workflowStats.ciSuccessRate,
         deploymentFrequencyWeekly: workflowStats.deploymentFrequencyWeekly,
-        workflowFailureRate: workflowFailureRateValue
+        workflowFailureRate: workflowFailureRateValue,
+        workflowTelemetry
       },
       quality: {
         testCoverage: workflowStats.testCoverage,

@@ -1,4 +1,5 @@
 import type { OrganizationInput, RepositoryImportance, RepositoryMetricInput } from "../domain/health/types.js";
+import type { GitHubWorkflowTelemetrySlice } from "../infrastructure/github/types.js";
 
 export type GitHubSource = "mock" | "live";
 
@@ -26,6 +27,7 @@ export type GitHubNormalizedRepository = {
   name: string;
   importance: RepositoryImportance;
   metrics: RepositoryMetricInput;
+  cicdTelemetry?: GitHubWorkflowTelemetrySlice;
   issues: GitHubAdapterIssue[];
 };
 

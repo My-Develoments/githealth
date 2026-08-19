@@ -34,6 +34,47 @@ function signalToneBadge(tone: CommandCenterHealthViewModel["categorySignals"][n
   return tone;
 }
 
+function percent(value: number | undefined): string {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "Unavailable";
+  }
+
+  return `${Math.round(value)}%`;
+}
+
+function formatRunTimestamp(value: string | undefined): string {
+  if (!value) {
+    return "Unknown time";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown time";
+  }
+
+  return date.toLocaleString();
+}
+
+function runTone(status: string, conclusion?: string): "healthy" | "warning" | "critical" | "neutral" | "unknown" {
+  if (status !== "completed") {
+    return "warning";
+  }
+
+  if (conclusion === "success") {
+    return "healthy";
+  }
+
+  if (conclusion === "failure" || conclusion === "timed_out" || conclusion === "startup_failure" || conclusion === "action_required") {
+    return "critical";
+  }
+
+  if (conclusion === "cancelled" || conclusion === "neutral" || conclusion === "skipped" || conclusion === "stale") {
+    return "neutral";
+  }
+
+  return "unknown";
+}
+
 export function CiCdHealthScreen({
   activeNavId = "cicd",
   onNavigate,
@@ -62,6 +103,47 @@ export function CiCdHealthScreen({
       return right.pullRequests - left.pullRequests;
     })
     .slice(0, 5);
+
+  const repositoriesWithWorkflowTelemetry = repositories.filter((repository) => repository.cicdTelemetry);
+  const workflowTelemetrySummary = repositoriesWithWorkflowTelemetry.reduce(
+    (accumulator, repository) => {
+      const summary = repository.cicdTelemetry?.runSummary;
+      if (!summary) {
+        return accumulator;
+      }
+
+      accumulator.totalRuns += summary.totalRuns;
+      accumulator.completedRuns += summary.completedRuns;
+      accumulator.successCount += summary.successCount;
+      accumulator.failureCount += summary.failureCount;
+      return accumulator;
+    },
+    {
+      totalRuns: 0,
+      completedRuns: 0,
+      successCount: 0,
+      failureCount: 0
+    }
+  );
+
+  const telemetryConsideredRuns = workflowTelemetrySummary.successCount + workflowTelemetrySummary.failureCount;
+  const aggregateSuccessRate = telemetryConsideredRuns > 0
+    ? (workflowTelemetrySummary.successCount / telemetryConsideredRuns) * 100
+    : undefined;
+  const aggregateFailureRate = telemetryConsideredRuns > 0
+    ? (workflowTelemetrySummary.failureCount / telemetryConsideredRuns) * 100
+    : undefined;
+
+  const recentWorkflowRuns = repositoriesWithWorkflowTelemetry
+    .flatMap((repository) =>
+      (repository.cicdTelemetry?.recentRuns ?? []).map((run) => ({
+        ...run,
+        repository: repository.name,
+        sortKey: run.createdAt ? new Date(run.createdAt).getTime() : 0
+      }))
+    )
+    .sort((left, right) => right.sortKey - left.sortKey)
+    .slice(0, 8);
 
   const cicdInsights = healthData.insights
     .filter((insight) => /ci|cd|pipeline|workflow|delivery|release|build|deploy/i.test(`${insight.title} ${insight.action}`))
@@ -160,6 +242,8 @@ export function CiCdHealthScreen({
               <span>Repositories evaluated: {healthData.totalRepositories}</span>
               <span>Low CI / CD score repos: {lowCiCdRepositories.length}</span>
               <span>High PR queue repos: {highQueueRepositories.length}</span>
+              <span>Repos with workflow telemetry: {repositoriesWithWorkflowTelemetry.length}</span>
+              <span>Recent workflow runs: {workflowTelemetrySummary.totalRuns}</span>
               <span>Critical repos: {healthData.pulse.critical}</span>
               <span>Warning repos: {healthData.pulse.warning}</span>
             </div>
@@ -276,9 +360,68 @@ export function CiCdHealthScreen({
                   <li key={repository.id}>
                     <div>
                       <Text size="sm" tone="secondary">{repository.name}</Text>
-                      <Text size="sm" tone="muted">CI / CD score: {repository.cicdScore} · Open issues: {repository.openIssues} · Pull requests: {repository.pullRequests}</Text>
+                      <Text size="sm" tone="muted">
+                        CI / CD score: {repository.cicdScore} · Open issues: {repository.openIssues} · Pull requests: {repository.pullRequests}
+                      </Text>
+                      <Text size="sm" tone="muted">
+                        Workflow runs: {repository.cicdTelemetry?.runSummary.totalRuns ?? 0} · Success: {repository.cicdTelemetry?.runSummary.successCount ?? 0} · Failure: {repository.cicdTelemetry?.runSummary.failureCount ?? 0}
+                      </Text>
                     </div>
                     <Badge tone={scoreTone(repository.cicdScore)}>{repository.cicdScore}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+
+          <Panel tone="subtle" className="chs-card chs-telemetry cc-reveal cc-reveal--states">
+            <div className="chs-card__header">
+              <Heading as="h3" size="sm">
+                Live Workflow Telemetry
+              </Heading>
+              <Badge tone={repositoriesWithWorkflowTelemetry.length > 0 ? "healthy" : "warning"}>
+                {repositoriesWithWorkflowTelemetry.length > 0 ? "available" : "unavailable"}
+              </Badge>
+            </div>
+
+            {repositoriesWithWorkflowTelemetry.length === 0 ? (
+              <Text size="sm" tone="muted">
+                No workflow telemetry is currently available for the selected repositories/source.
+              </Text>
+            ) : (
+              <div className="chs-telemetry-grid">
+                <span>Total runs: {workflowTelemetrySummary.totalRuns}</span>
+                <span>Completed runs: {workflowTelemetrySummary.completedRuns}</span>
+                <span>Success count: {workflowTelemetrySummary.successCount}</span>
+                <span>Failure count: {workflowTelemetrySummary.failureCount}</span>
+                <span>Success rate: {percent(aggregateSuccessRate)}</span>
+                <span>Failure rate: {percent(aggregateFailureRate)}</span>
+              </div>
+            )}
+          </Panel>
+
+          <Panel tone="subtle" className="chs-card chs-runs cc-reveal cc-reveal--states">
+            <Heading as="h3" size="sm">
+              Recent Workflow Runs
+            </Heading>
+
+            {recentWorkflowRuns.length === 0 ? (
+              <Text size="sm" tone="muted">No recent workflow run context is available yet.</Text>
+            ) : (
+              <ul className="chs-run-list" aria-label="Recent workflow runs">
+                {recentWorkflowRuns.map((run, index) => (
+                  <li key={`${run.repository}-${run.id ?? run.runNumber ?? run.name}-${index}`}>
+                    <div>
+                      <Text size="sm" tone="secondary">{run.name}</Text>
+                      <Text size="sm" tone="muted">
+                        {run.repository} · {run.event ?? "event: unavailable"} · {run.branch ?? "branch: unavailable"}
+                      </Text>
+                      <Text size="sm" tone="muted">{formatRunTimestamp(run.createdAt)}</Text>
+                    </div>
+                    <div className="chs-run-badges">
+                      <Badge tone={runTone(run.status, run.conclusion)}>{run.status}</Badge>
+                      <Badge tone={runTone(run.status, run.conclusion)}>{run.conclusion ?? "pending"}</Badge>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -309,13 +452,13 @@ export function CiCdHealthScreen({
 
           <Panel tone="subtle" className="chs-card chs-limitations cc-reveal cc-reveal--states">
             <Heading as="h3" size="sm">
-              Workflow Data Coverage
+              Unavailable Delivery Metrics
             </Heading>
             <Text size="sm" tone="secondary">
-              Current frontend contracts expose category-level CI / CD scores and repository-level health context, but not workflow run, deployment frequency, lead time, or failure-rate series.
+              Deployment frequency, lead time for changes, change failure rate, and mean time to restore are not reported as DORA metrics because the current API does not include deployment-event and incident-recovery timelines.
             </Text>
             <Text size="sm" tone="muted">
-              This screen intentionally avoids inventing pipeline/build/deployment values and only reports metrics currently supported by GitHealth view models.
+              This view reports only live workflow telemetry available from GitHub Actions runs and repository CI/CD scoring signals.
             </Text>
           </Panel>
         </section>

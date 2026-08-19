@@ -24,6 +24,8 @@ describe("CiCdHealthScreen", () => {
     expect(screen.getByText("Low CI / CD score repos: 1")).toBeTruthy();
     expect(screen.getByText("Repository Delivery Context")).toBeTruthy();
     expect(screen.getByText("api-gateway")).toBeTruthy();
+    expect(screen.getByText("Live Workflow Telemetry")).toBeTruthy();
+    expect(screen.getByText("Recent Workflow Runs")).toBeTruthy();
   });
 
   it("clearly distinguishes mock/demo source", () => {
@@ -106,7 +108,7 @@ describe("CiCdHealthScreen", () => {
     expect(screen.getByText("No repository-level CI / CD context is available for the current source.")).toBeTruthy();
   });
 
-  it("surfaces workflow data coverage limitations without inventing delivery telemetry", () => {
+  it("shows unavailable DORA metrics while using real workflow telemetry", () => {
     render(
       <CiCdHealthScreen
         healthData={buildHealthData()}
@@ -116,8 +118,10 @@ describe("CiCdHealthScreen", () => {
       />
     );
 
-    expect(screen.getByText("Workflow Data Coverage")).toBeTruthy();
-    expect(screen.getByText(/but not workflow run, deployment frequency, lead time, or failure-rate series/i)).toBeTruthy();
+    expect(screen.getByText("Unavailable Delivery Metrics")).toBeTruthy();
+    expect(screen.getByText(/lead time for changes/i)).toBeTruthy();
+    expect(screen.getByText("Total runs: 3")).toBeTruthy();
+    expect(screen.getByText("Success rate: 67%")).toBeTruthy();
   });
 });
 
@@ -191,6 +195,46 @@ function buildRepositoryData(overrides: Partial<RepositoryUniverseViewModel> = {
         trend: [],
         operationalDataAvailable: true,
         trendDataAvailable: false,
+        cicdTelemetry: {
+          ciSuccessRate: 76,
+          deploymentFrequencyWeekly: 5.4,
+          workflowFailureRate: 24,
+          runSummary: {
+            totalRuns: 3,
+            completedRuns: 3,
+            successCount: 2,
+            failureCount: 1,
+            successRate: 66.67,
+            failureRate: 33.33,
+            latestRunAt: "2026-02-05T10:45:00.000Z"
+          },
+          recentRuns: [
+            {
+              id: 91,
+              name: "build",
+              status: "completed",
+              conclusion: "success",
+              event: "push",
+              branch: "main",
+              runNumber: 44,
+              createdAt: "2026-02-05T10:45:00.000Z",
+              updatedAt: "2026-02-05T10:49:00.000Z",
+              url: "https://github.com/githealth-labs/api-gateway/actions/runs/91"
+            },
+            {
+              id: 90,
+              name: "integration",
+              status: "completed",
+              conclusion: "failure",
+              event: "pull_request",
+              branch: "feature/ci",
+              runNumber: 43,
+              createdAt: "2026-02-05T09:40:00.000Z",
+              updatedAt: "2026-02-05T09:46:00.000Z",
+              url: "https://github.com/githealth-labs/api-gateway/actions/runs/90"
+            }
+          ]
+        },
         topProblems: ["Delivery queue saturation"],
         recommendations: ["Increase workflow parallelization"]
       }

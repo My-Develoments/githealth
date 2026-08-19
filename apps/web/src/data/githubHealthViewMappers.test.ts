@@ -81,4 +81,208 @@ describe("mapGitHubHealthToViewModels", () => {
     expect(metadataOnlyNode?.status).toBe("no-data");
     expect(metadataOnlyNode?.healthScore).toBe(0);
   });
+
+  it("keeps low/zero scored repositories separate from missing-data repositories", () => {
+    const mapped = mapGitHubHealthToViewModels({
+      ...buildBaseRawData(),
+      repositories: [
+        buildRepository({
+          repositoryId: "repo-zero",
+          repositoryName: "repo-zero",
+          overallScore: 0,
+          completeness: 1,
+          categories: [
+            buildCategory("security", 0, 1, 2, 0),
+            buildCategory("governance", 0, 1, 2, 0),
+            buildCategory("cicd", 0, 1, 2, 0),
+            buildCategory("quality-maintenance", 0, 1, 2, 0)
+          ]
+        }),
+        buildRepository({
+          repositoryId: "repo-missing",
+          repositoryName: "repo-missing",
+          overallScore: 0,
+          completeness: 0,
+          categories: [
+            buildCategory("security", 0, 0, 0, 0),
+            buildCategory("governance", 0, 0, 0, 0),
+            buildCategory("cicd", 0, 0, 0, 0),
+            buildCategory("quality-maintenance", 0, 0, 0, 0)
+          ]
+        })
+      ]
+    });
+
+    const zeroScoreRepository = mapped.repositoryUniverse.repositories.find((repository) => repository.id === "repo-zero");
+    const missingRepository = mapped.repositoryUniverse.repositories.find((repository) => repository.id === "repo-missing");
+
+    expect(zeroScoreRepository?.status).toBe("critical");
+    expect(missingRepository?.status).toBe("no-data");
+    expect(missingRepository?.recommendations[0]).toContain("Data unavailable");
+  });
+
+  it("maps deterministic problem insights and fallback recommendations", () => {
+    const mapped = mapGitHubHealthToViewModels({
+      ...buildBaseRawData(),
+      adapterIssues: [
+        {
+          code: "DATA_TRUNCATED",
+          message: "Repository scan returned partial records.",
+          repositoryId: "repo-insights"
+        }
+      ],
+      repositories: [
+        buildRepository({
+          repositoryId: "repo-insights",
+          repositoryName: "repo-insights",
+          overallScore: 52,
+          completeness: 1,
+          categories: [
+            buildCategory("security", 52, 1, 4, 0),
+            buildCategory("governance", 82, 1, 4, 0),
+            buildCategory("cicd", 78, 1, 4, 0),
+            buildCategory("quality-maintenance", 80, 1, 4, 0)
+          ],
+          negativeContributors: [
+            {
+              metricKey: "security_alerts_open",
+              metricLabel: "Open Security Alerts",
+              category: "security",
+              rationale: "Open alerts are above expected target."
+            }
+          ],
+          validationIssues: [
+            {
+              scope: "repository",
+              message: "Branch protection data is stale.",
+              metricKey: "branch_protection_coverage",
+              repositoryId: "repo-insights"
+            }
+          ],
+          recommendations: []
+        })
+      ]
+    });
+
+    const repository = mapped.repositoryUniverse.repositories.find((value) => value.id === "repo-insights");
+    expect(repository?.topProblems).toEqual([
+      "Branch protection data is stale.",
+      "Security score 52 is below target.",
+      "CI / CD score 78 is below target."
+    ]);
+    expect(repository?.recommendations).toEqual([
+      "Improve security controls to raise score above watch threshold.",
+      "Improve ci / cd controls to raise score above watch threshold.",
+      "Improve quality controls to raise score above watch threshold."
+    ]);
+  });
+
+  it("uses API recommendations first and keeps deterministic ordering", () => {
+    const mapped = mapGitHubHealthToViewModels({
+      ...buildBaseRawData(),
+      repositories: [
+        buildRepository({
+          repositoryId: "repo-recommendations",
+          repositoryName: "repo-recommendations",
+          overallScore: 70,
+          completeness: 1,
+          recommendations: [
+            {
+              actionKey: "quality-improvement",
+              category: "quality-maintenance",
+              title: "Raise Test Coverage",
+              description: "Increase automated test depth.",
+              priority: "medium"
+            },
+            {
+              actionKey: "branch-protection-enforcement",
+              category: "governance",
+              title: "Strengthen Branch Protection",
+              description: "Require checks and approvals.",
+              priority: "high"
+            },
+            {
+              actionKey: "security-alert-burn-down",
+              category: "security",
+              title: "Reduce Open Security Alerts",
+              description: "Patch critical dependencies first.",
+              priority: "high"
+            }
+          ]
+        })
+      ]
+    });
+
+    const repository = mapped.repositoryUniverse.repositories.find((value) => value.id === "repo-recommendations");
+    expect(repository?.recommendations).toEqual([
+      "Strengthen Branch Protection: Require checks and approvals.",
+      "Reduce Open Security Alerts: Patch critical dependencies first.",
+      "Raise Test Coverage: Increase automated test depth."
+    ]);
+  });
 });
+
+function buildCategory(
+  category: "security" | "governance" | "cicd" | "quality-maintenance",
+  score: number,
+  completeness: number,
+  metricsConsidered: number,
+  metricsMissing: number
+) {
+  return {
+    category,
+    score,
+    completeness,
+    metricsConsidered,
+    metricsMissing
+  };
+}
+
+function buildRepository(overrides: Partial<GitHubHealthRawData["repositories"][number]>): GitHubHealthRawData["repositories"][number] {
+  return {
+    repositoryId: "repo",
+    repositoryName: "repo",
+    importance: "high",
+    overallScore: 82,
+    categories: [
+      buildCategory("security", 82, 1, 6, 0),
+      buildCategory("governance", 81, 1, 6, 0),
+      buildCategory("cicd", 85, 1, 6, 0),
+      buildCategory("quality-maintenance", 80, 1, 6, 0)
+    ],
+    completeness: 1,
+    positiveContributors: [],
+    negativeContributors: [],
+    recommendations: [],
+    validationIssues: [],
+    ...overrides
+  };
+}
+
+function buildBaseRawData(): GitHubHealthRawData {
+  return {
+    source: "mock",
+    fetchStatus: "complete",
+    adapterIssues: [],
+    organization: {
+      organizationId: "org-id",
+      organizationName: "GitHealth Labs",
+      overallScore: 89,
+      categories: [
+        buildCategory("security", 92, 1, 6, 0),
+        buildCategory("governance", 87, 1, 6, 0),
+        buildCategory("cicd", 84, 1, 6, 0),
+        buildCategory("quality-maintenance", 88, 1, 6, 0)
+      ],
+      completeness: 1,
+      repositoryCount: 1,
+      positiveContributors: [],
+      negativeContributors: [],
+      recommendations: [],
+      validationIssues: [],
+      scoringVersion: "1.0.0",
+      calculatedAt: new Date().toISOString()
+    },
+    repositories: []
+  };
+}

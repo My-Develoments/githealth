@@ -69,14 +69,21 @@ export type GitHubHealthViewModels = {
 };
 
 const CATEGORY_LABEL_MAP: Record<ApiCategoryScore["category"], { key: string; label: string }> = {
+  "repository-health": { key: "repository-health", label: "Repository Health" },
   security: { key: "security", label: "Security" },
   governance: { key: "governance", label: "Governance" },
   cicd: { key: "cicd", label: "CI / CD" },
   "quality-maintenance": { key: "quality", label: "Quality" }
 };
 
+const RECOMMENDATION_PRIORITY_WEIGHT = {
+  high: 3,
+  medium: 2,
+  low: 1
+} as const;
+
 export function mapGitHubHealthToViewModels(raw: GitHubHealthRawData): GitHubHealthViewModels {
-  const mappedRepositories = mapRepositories(raw.repositories);
+  const mappedRepositories = mapRepositories(raw.repositories, raw.adapterIssues);
 
   return {
     commandCenter: {
@@ -163,7 +170,7 @@ function mapInsights(raw: GitHubHealthRawData): typeof insightDefaults {
   return insightDefaults;
 }
 
-function mapRepositories(apiRepositories: ApiRepositoryScore[]): UniverseRepository[] {
+function mapRepositories(apiRepositories: ApiRepositoryScore[], adapterIssues: GitHubAdapterIssue[]): UniverseRepository[] {
   const metadataById = new Map(universeRepositories.map((repository) => [repository.id, repository]));
 
   const mappedApiRepositories = apiRepositories.map((repository, index) => {
@@ -174,7 +181,7 @@ function mapRepositories(apiRepositories: ApiRepositoryScore[]): UniverseReposit
     const governanceScore = categoryScore(repository.categories, "governance");
     const cicdScore = categoryScore(repository.categories, "cicd");
     const qualityScore = categoryScore(repository.categories, "quality-maintenance");
-    const status = mapStatus(repository.overallScore, repository.completeness);
+    const status = mapStatus(repository);
 
     return {
       id: repository.repositoryId,
@@ -195,8 +202,8 @@ function mapRepositories(apiRepositories: ApiRepositoryScore[]): UniverseReposit
       dependencies: metadata?.dependencies ?? 0,
       lastActivity: metadata?.lastActivity ?? "N/A",
       trend: metadata?.trend ?? [clampScore(repository.overallScore)],
-      topProblems: buildTopProblems(repository),
-      recommendations: repository.recommendations.slice(0, 3).map((value) => value.title)
+      topProblems: buildTopProblems(repository, adapterIssues),
+      recommendations: mapRepositoryRecommendations(repository, status, adapterIssues)
     } satisfies UniverseRepository;
   });
 
@@ -218,15 +225,141 @@ function mapRepositories(apiRepositories: ApiRepositoryScore[]): UniverseReposit
   return [...mappedApiRepositories, ...metadataOnly];
 }
 
-function buildTopProblems(repository: ApiRepositoryScore): string[] {
-  const fromValidation = repository.validationIssues.slice(0, 3).map((issue) => issue.message);
-  if (fromValidation.length > 0) {
-    return fromValidation;
+function buildTopProblems(repository: ApiRepositoryScore, adapterIssues: GitHubAdapterIssue[]): string[] {
+  const problems: string[] = [];
+
+  const validationIssues = [...repository.validationIssues]
+    .sort((left, right) => {
+      const metricCompare = (left.metricKey ?? "").localeCompare(right.metricKey ?? "");
+      if (metricCompare !== 0) {
+        return metricCompare;
+      }
+      return left.message.localeCompare(right.message);
+    })
+    .map((issue) => issue.message);
+  problems.push(...validationIssues);
+
+  const lowCategories = [...repository.categories]
+    .filter((category) => hasCategorySignal(category) && categoryScoreBelowThreshold(category.score, 88))
+    .sort((left, right) => {
+      const scoreCompare = left.score - right.score;
+      if (scoreCompare !== 0) {
+        return scoreCompare;
+      }
+      return left.category.localeCompare(right.category);
+    })
+    .map((category) => `${CATEGORY_LABEL_MAP[category.category].label} score ${clampScore(category.score)} is below target.`);
+  problems.push(...lowCategories);
+
+  const contributorProblems = [...repository.negativeContributors]
+    .sort((left, right) => {
+      const metricCompare = left.metricKey.localeCompare(right.metricKey);
+      if (metricCompare !== 0) {
+        return metricCompare;
+      }
+      return left.rationale.localeCompare(right.rationale);
+    })
+    .map((contributor) => `${contributor.metricLabel}: ${contributor.rationale}`);
+  problems.push(...contributorProblems);
+
+  const scopedAdapterIssues = adapterIssues
+    .filter((issue) => issue.repositoryId === repository.repositoryId)
+    .sort((left, right) => {
+      const codeCompare = left.code.localeCompare(right.code);
+      if (codeCompare !== 0) {
+        return codeCompare;
+      }
+      return left.message.localeCompare(right.message);
+    })
+    .map((issue) => issue.message);
+  problems.push(...scopedAdapterIssues);
+
+  const uniqueProblems = dedupeStable(problems).slice(0, 3);
+  if (uniqueProblems.length > 0) {
+    return uniqueProblems;
   }
-  if (repository.recommendations.length > 0) {
-    return [repository.recommendations[0].description];
+
+  return ["No high-risk findings reported for available signals."];
+}
+
+function mapRepositoryRecommendations(
+  repository: ApiRepositoryScore,
+  status: HealthStatus,
+  adapterIssues: GitHubAdapterIssue[]
+): string[] {
+  if (status === "no-data") {
+    const scopedIssue = adapterIssues.find((issue) => issue.repositoryId === repository.repositoryId);
+    if (scopedIssue) {
+      return [
+        `Data unavailable: ${scopedIssue.message}`,
+        "Restore missing repository signals and rerun the organization scan."
+      ];
+    }
+
+    return [
+      "Data unavailable: health signals are missing for this repository.",
+      "Enable repository telemetry and policy signals, then rerun health collection."
+    ];
   }
-  return ["No critical problems detected."];
+
+  const sortedApiRecommendations = [...repository.recommendations]
+    .sort((left, right) => {
+      const priorityCompare = RECOMMENDATION_PRIORITY_WEIGHT[right.priority] - RECOMMENDATION_PRIORITY_WEIGHT[left.priority];
+      if (priorityCompare !== 0) {
+        return priorityCompare;
+      }
+
+      const actionCompare = left.actionKey.localeCompare(right.actionKey);
+      if (actionCompare !== 0) {
+        return actionCompare;
+      }
+
+      return left.title.localeCompare(right.title);
+    })
+    .map((recommendation) => `${recommendation.title}: ${recommendation.description}`);
+
+  if (sortedApiRecommendations.length > 0) {
+    return sortedApiRecommendations.slice(0, 3);
+  }
+
+  const categoryFallback = [...repository.categories]
+    .filter((category) => hasCategorySignal(category) && categoryScoreBelowThreshold(category.score, 88))
+    .sort((left, right) => {
+      const scoreCompare = left.score - right.score;
+      if (scoreCompare !== 0) {
+        return scoreCompare;
+      }
+      return left.category.localeCompare(right.category);
+    })
+    .map((category) =>
+      `Improve ${CATEGORY_LABEL_MAP[category.category].label.toLowerCase()} controls to raise score above watch threshold.`
+    );
+
+  const validationFallback = [...repository.validationIssues]
+    .sort((left, right) => left.message.localeCompare(right.message))
+    .map((issue) => `Address data-quality issue: ${issue.message}`);
+
+  const contributorFallback = [...repository.negativeContributors]
+    .sort((left, right) => {
+      const metricCompare = left.metricKey.localeCompare(right.metricKey);
+      if (metricCompare !== 0) {
+        return metricCompare;
+      }
+      return left.rationale.localeCompare(right.rationale);
+    })
+    .map((contributor) => `Remediate ${contributor.metricLabel.toLowerCase()}: ${contributor.rationale}`);
+
+  const fallbackRecommendations = dedupeStable([
+    ...categoryFallback,
+    ...validationFallback,
+    ...contributorFallback
+  ]).slice(0, 3);
+
+  if (fallbackRecommendations.length > 0) {
+    return fallbackRecommendations;
+  }
+
+  return ["Maintain current controls and monitor for regressions in upcoming scans."];
 }
 
 function buildPulse(repositories: UniverseRepository[]): CommandCenterHealthViewModel["pulse"] {
@@ -326,10 +459,12 @@ function mapImportance(value: ApiRepositoryImportance): UniverseRepository["impo
   return "support";
 }
 
-function mapStatus(score: number, completeness: number): HealthStatus {
-  if (completeness <= 0 || score <= 0) {
+function mapStatus(repository: ApiRepositoryScore): HealthStatus {
+  if (!hasRepositorySignalData(repository)) {
     return "no-data";
   }
+
+  const score = repository.overallScore;
   if (score >= 88) {
     return "healthy";
   }
@@ -353,7 +488,7 @@ function scoreStatus(score: number): string {
 }
 
 function toToneFromScore(score: number, completeness: number): "healthy" | "warning" | "critical" | "neutral" | "unknown" {
-  if (completeness <= 0 || score <= 0) {
+  if (completeness <= 0) {
     return "unknown";
   }
   if (score >= 88) {
@@ -372,9 +507,44 @@ function categoryScore(categories: ApiCategoryScore[], key: ApiCategoryScore["ca
 
 function countRepositoriesForCategory(repositories: ApiRepositoryScore[], category: ApiCategoryScore["category"]): number {
   return repositories.filter((repository) => {
-    const score = categoryScore(repository.categories, category);
-    return score > 0 && score < 88;
+    const categoryScoreEntry = repository.categories.find((value) => value.category === category);
+    if (!categoryScoreEntry || !hasCategorySignal(categoryScoreEntry)) {
+      return false;
+    }
+
+    return categoryScoreBelowThreshold(categoryScoreEntry.score, 88);
   }).length;
+}
+
+function hasRepositorySignalData(repository: ApiRepositoryScore): boolean {
+  if (repository.completeness > 0) {
+    return true;
+  }
+
+  return repository.categories.some((category) => hasCategorySignal(category));
+}
+
+function hasCategorySignal(category: ApiCategoryScore): boolean {
+  return category.completeness > 0 || category.metricsConsidered > 0 || category.metricsMissing > 0;
+}
+
+function categoryScoreBelowThreshold(score: number, threshold: number): boolean {
+  return clampScore(score) < threshold;
+}
+
+function dedupeStable(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  values.forEach((value) => {
+    if (seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    result.push(value);
+  });
+
+  return result;
 }
 
 function clampScore(value: number): number {

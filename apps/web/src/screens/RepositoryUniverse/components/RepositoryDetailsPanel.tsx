@@ -37,6 +37,22 @@ function toneFromStatus(status: UniverseRepository["status"]): "healthy" | "warn
   return "healthy";
 }
 
+function statusExplanation(repository: UniverseRepository): string {
+  if (repository.status === "no-data") {
+    return "Health signals are unavailable for this repository. This missing-data state is not the same as a healthy or low numeric score.";
+  }
+
+  if (repository.status === "critical") {
+    return "Multiple repository health signals are below target thresholds. Prioritize the remediation guidance below before the next release cycle.";
+  }
+
+  if (repository.status === "needs-attention") {
+    return "At least one health domain is below target. Apply the listed remediation actions to prevent this repository from drifting into critical state.";
+  }
+
+  return "Available health signals indicate this repository is stable. Keep applying existing controls and monitor for regressions.";
+}
+
 export function RepositoryDetailsPanel({ repository, onClose }: RepositoryDetailsPanelProps) {
   if (!repository) {
     return (
@@ -78,6 +94,10 @@ export function RepositoryDetailsPanel({ repository, onClose }: RepositoryDetail
         </div>
         <Badge tone={toneFromStatus(repository.status)}>{statusLabel(repository.status)}</Badge>
       </div>
+
+      <Text size="sm" tone={repository.status === "no-data" ? "muted" : "secondary"}>
+        {statusExplanation(repository)}
+      </Text>
 
       <div className="ru-details-metrics">
         <div>

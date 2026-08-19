@@ -64,6 +64,7 @@ describe("localDevelopmentCors", () => {
       expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5174");
       expect(response.headers.get("access-control-allow-methods")).toBe("GET, OPTIONS");
       expect(response.headers.get("access-control-allow-headers")).toBe("Accept, Authorization, x-github-app-session");
+      expect(response.headers.get("access-control-allow-credentials")).toBe("true");
       expect(response.headers.get("vary")).toContain("Origin");
     });
   });
@@ -83,6 +84,7 @@ describe("localDevelopmentCors", () => {
       expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
       expect(response.headers.get("access-control-allow-methods")).toBe("GET, OPTIONS");
       expect(response.headers.get("access-control-allow-headers")).toBe("Accept, Authorization, x-github-app-session");
+      expect(response.headers.get("access-control-allow-credentials")).toBe("true");
     });
   });
 

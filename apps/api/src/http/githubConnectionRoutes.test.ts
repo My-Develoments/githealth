@@ -69,35 +69,21 @@ describe("githubConnectionRoutes", () => {
     restoreEnv("ALLOWED_GITHUB_ORGS", previousAllowedGitHubOrgs);
   });
 
-  function authHeaders(token = "issue36-token") {
-    return {
-      Authorization: `Bearer ${token}`
-    };
-  }
-
   function configureAppMode() {
     process.env.API_AUTH_TOKEN = "issue36-token";
     process.env.GITHUB_AUTH_PROVIDER = "app";
     process.env.GITHUB_APP_ID = "12345";
     process.env.GITHUB_APP_PRIVATE_KEY = TEST_PRIVATE_KEY;
     process.env.GITHUB_APP_INSTALL_URL = "https://github.com/apps/githealth/installations/new";
+    process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL = "http://localhost:5173";
     process.env.ALLOWED_GITHUB_ORGS = "githealth-labs";
-  }
-
-  function installSessionHeaders(token: string) {
-    return {
-      ...authHeaders(),
-      "x-github-app-session": token
-    };
   }
 
   it("returns ready_to_connect when app mode is configured without installation id", async () => {
     configureAppMode();
 
     await withServer(async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/github/connection/status`, {
-        headers: authHeaders()
-      });
+      const response = await fetch(`${baseUrl}/github/connection/status`);
       const body = await response.json() as { provider: string; status: string; canConnect: boolean };
 
       expect(response.status).toBe(200);
@@ -107,17 +93,30 @@ describe("githubConnectionRoutes", () => {
     });
   });
 
-  it("returns the install URL through the protected start endpoint", async () => {
+  it("returns the install URL through the onboarding start endpoint", async () => {
     configureAppMode();
 
     await withServer(async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/github/connection/start`, {
-        headers: authHeaders()
-      });
+      const response = await fetch(`${baseUrl}/github/connection/start`);
       const body = await response.json() as { connectUrl: string };
 
       expect(response.status).toBe(200);
       expect(body.connectUrl).toBe("https://github.com/apps/githealth/installations/new");
+    });
+  });
+
+  it("returns not_configured when onboarding redirect url is missing", async () => {
+    configureAppMode();
+    delete process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL;
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/github/connection/status`);
+      const body = await response.json() as { status: string; canConnect: boolean; message: string };
+
+      expect(response.status).toBe(200);
+      expect(body.status).toBe("not_configured");
+      expect(body.canConnect).toBe(false);
+      expect(body.message).toContain("return URL");
     });
   });
 
@@ -162,12 +161,14 @@ describe("githubConnectionRoutes", () => {
       expect(redirectUrl.searchParams.get("github_app_status")).toBe("installation_completed");
       expect(redirectUrl.searchParams.get("github_app_callback")).toBe("received");
       expect(redirectUrl.searchParams.get("github_app_setup_action")).toBe("install");
-      expect(redirectUrl.searchParams.get("github_app_session")).toBeTruthy();
+      expect(redirectUrl.searchParams.get("github_app_session")).toBeNull();
+      expect(response.headers.get("set-cookie")).toContain("githealth_github_app_session=");
     });
   });
 
-  it("completes callback and allows protected status to use the returned session token", async () => {
+  it("completes callback and allows status to use the issued session cookie", async () => {
     configureAppMode();
+    delete process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL;
 
     const originalFetch = globalThis.fetch;
     const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
@@ -212,25 +213,49 @@ describe("githubConnectionRoutes", () => {
 
     await withServer(async (baseUrl) => {
       const callbackResponse = await fetch(`${baseUrl}/github/connection/callback?installation_id=77&setup_action=install`);
-      const callbackBody = await callbackResponse.json() as { status: string; sessionToken: string };
+      const callbackBody = await callbackResponse.json() as { status: string; organization: string };
+      const sessionCookie = callbackResponse.headers.get("set-cookie");
 
       expect(callbackResponse.status).toBe(200);
       expect(callbackBody.status).toBe("installation_completed");
-      expect(callbackBody.sessionToken).toBeTruthy();
+      expect(callbackBody.organization).toBe("githealth-labs");
+      expect(sessionCookie).toContain("githealth_github_app_session=");
 
       const statusResponse = await fetch(`${baseUrl}/github/connection/status`, {
-        headers: installSessionHeaders(callbackBody.sessionToken)
+        headers: {
+          Cookie: sessionCookie ?? ""
+        }
       });
-      const statusBody = await statusResponse.json() as { status: string; isConnected: boolean };
+      const statusBody = await statusResponse.json() as { status: string; isConnected: boolean; organization?: string };
 
       expect(statusResponse.status).toBe(200);
       expect(statusBody.status).toBe("connected");
       expect(statusBody.isConnected).toBe(true);
+      expect(statusBody.organization).toBe("githealth-labs");
+    });
+  });
+
+  it("clears invalid callback/session state through sanitized status response", async () => {
+    configureAppMode();
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/github/connection/status`, {
+        headers: {
+          Cookie: "githealth_github_app_session=invalid"
+        }
+      });
+      const body = await response.json() as { status: string; message: string };
+
+      expect(response.status).toBe(200);
+      expect(body.status).toBe("unauthorized_installation");
+      expect(body.message).toContain("invalid or expired");
+      expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
     });
   });
 
   it("returns a callback error when installation_id is missing", async () => {
     configureAppMode();
+    delete process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL;
 
     await withServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/github/connection/callback?setup_action=install`);
@@ -244,6 +269,7 @@ describe("githubConnectionRoutes", () => {
 
   it("returns a callback error when installation_id is invalid", async () => {
     configureAppMode();
+    delete process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL;
 
     await withServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/github/connection/callback?installation_id=abc&setup_action=install`);
@@ -257,6 +283,7 @@ describe("githubConnectionRoutes", () => {
 
   it("returns a callback error when setup_action is missing", async () => {
     configureAppMode();
+    delete process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL;
 
     await withServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/github/connection/callback?installation_id=77`);
@@ -270,6 +297,7 @@ describe("githubConnectionRoutes", () => {
 
   it("returns a callback error when setup_action is invalid", async () => {
     configureAppMode();
+    delete process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL;
 
     await withServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/github/connection/callback?installation_id=77&setup_action=approve`);
@@ -283,6 +311,7 @@ describe("githubConnectionRoutes", () => {
 
   it("returns NOT_FOUND when GitHub installation is unavailable", async () => {
     configureAppMode();
+    delete process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL;
 
     const originalFetch = globalThis.fetch;
     const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
@@ -319,6 +348,7 @@ describe("githubConnectionRoutes", () => {
 
   it("rejects installations for unauthorized organizations", async () => {
     configureAppMode();
+    delete process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL;
 
     const originalFetch = globalThis.fetch;
     const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
@@ -361,9 +391,7 @@ describe("githubConnectionRoutes", () => {
     process.env.GITHUB_TOKEN = "pat-token";
 
     await withServer(async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/github/connection/status`, {
-        headers: authHeaders()
-      });
+      const response = await fetch(`${baseUrl}/github/connection/status`);
       const body = await response.json() as { provider: string; status: string; isConnected: boolean };
 
       expect(response.status).toBe(200);

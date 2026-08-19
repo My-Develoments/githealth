@@ -26,6 +26,7 @@ describe("requestJson", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
       Accept: "application/json"
     });
+    expect(fetchMock.mock.calls[0]?.[1]?.credentials).toBe("include");
   });
 
   it("merges custom request headers without adding browser auth tokens", async () => {
@@ -49,6 +50,7 @@ describe("requestJson", () => {
       Accept: "application/json",
       "x-github-app-session": "opaque-install-session"
     });
+    expect(fetchMock.mock.calls[0]?.[1]?.credentials).toBe("include");
   });
 
   it("ignores deprecated Vite auth token configuration even if present", async () => {
@@ -69,6 +71,7 @@ describe("requestJson", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
       Accept: "application/json"
     });
+    expect(fetchMock.mock.calls[0]?.[1]?.credentials).toBe("include");
   });
 
   it("preserves existing request and error handling", async () => {

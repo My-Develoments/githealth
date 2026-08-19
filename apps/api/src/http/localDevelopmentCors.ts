@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 
 const ALLOWED_DEV_ORIGINS = new Set(["http://localhost:5173", "http://localhost:5174"]);
 const ALLOWED_METHODS = "GET, OPTIONS";
-const ALLOWED_HEADERS = "Accept, Authorization";
+const ALLOWED_HEADERS = "Accept, Authorization, x-github-app-session";
 
 function applyCorsHeaders(res: Response, origin: string): void {
   res.setHeader("Access-Control-Allow-Origin", origin);

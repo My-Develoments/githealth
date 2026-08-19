@@ -69,6 +69,30 @@ No additional GitHub App session secret is required. GitHealth derives an intern
 - The browser-side installation session is short-lived and scoped to the current browser session.
 - The callback flow avoids manual `GITHUB_APP_INSTALLATION_ID` setup for the active browser session, but it is not a persistent multi-user installation registry.
 
+## End-to-end verification checklist
+
+Use this checklist to validate the real user journey after configuration changes.
+
+1. Start API and web apps with `GITHUB_AUTH_PROVIDER=app` and a valid `API_AUTH_TOKEN`.
+2. Open GitHealth and confirm the connection state is `ready_to_connect` (or `not_configured` if setup is incomplete).
+3. Click `Connect GitHub` and confirm the frontend calls `/github/connection/start` and redirects to `GITHUB_APP_INSTALL_URL`.
+4. Install/authorize the GitHub App for an organization listed in `ALLOWED_GITHUB_ORGS`.
+5. Confirm GitHub redirects to `/github/connection/callback` with `installation_id` and `setup_action=install`.
+6. Confirm callback behavior:
+  - Valid install: redirects to `GITHUB_APP_ONBOARDING_REDIRECT_URL` with callback metadata.
+  - Missing/invalid callback params: returns or redirects with `INVALID_REQUEST` error metadata.
+  - Unavailable installation or unauthorized org: returns or redirects with denied/not-found metadata.
+7. Confirm frontend consumes callback params, clears them from the URL, and stores only the opaque installation session for the current browser session.
+8. Confirm subsequent protected API calls include `x-github-app-session` and receive `connected` status when installation is valid.
+9. Confirm live data requests succeed past authentication and organization authorization checks:
+  - `/health-score/github/organization?org=<allowed-org>&source=live`
+  - `/health-score/github/repositories?org=<allowed-org>&source=live`
+10. Confirm local dev CORS preflight allows `x-github-app-session` for frontend origins `http://localhost:5173` and `http://localhost:5174`.
+11. Confirm PAT fallback still works by switching to `GITHUB_AUTH_PROVIDER=pat` with `GITHUB_TOKEN` and verifying connection status/live requests.
+
+Expected security outcome:
+- Private keys, PATs, GitHub installation access tokens, and other backend credentials are never returned in API payloads or rendered by the frontend.
+
 ## Production deployment considerations
 
 - If the web app and API run on different origins, ensure the frontend can send the opaque installation session token header to the API.

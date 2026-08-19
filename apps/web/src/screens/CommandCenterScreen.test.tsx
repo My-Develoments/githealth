@@ -181,6 +181,7 @@ describe("CommandCenterScreen source isolation", () => {
   it("keeps demo data visible in explicit mock mode", () => {
     render(
       <CommandCenterScreen
+        activeNavId="command-center"
         healthData={buildHealthModel("mock")}
         activityState={{ isLoading: false, isEmpty: false, hasError: false }}
       />
@@ -191,6 +192,24 @@ describe("CommandCenterScreen source isolation", () => {
     expect(screen.getByText("30-Day Health Trend")).toBeTruthy();
     expect(screen.getByText("Organization scan completed")).toBeTruthy();
     expect(screen.queryByText("Achievement data is unavailable in live mode.")).toBeNull();
+  });
+
+  it("updates active navigation state and handles sidebar navigation clicks", () => {
+    const onNavigate = vi.fn();
+
+    render(
+      <CommandCenterScreen
+        activeNavId="security"
+        onNavigate={onNavigate}
+        healthData={buildHealthModel("live")}
+        activityState={{ isLoading: false, isEmpty: false, hasError: false }}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Security" }).getAttribute("aria-current")).toBe("page");
+
+    fireEvent.click(screen.getByRole("button", { name: "Governance" }));
+    expect(onNavigate).toHaveBeenCalledWith("governance");
   });
 });
 

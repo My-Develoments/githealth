@@ -19,15 +19,29 @@ export type RequestJsonOptions = {
   signal?: AbortSignal;
 };
 
+function buildRequestHeaders(): HeadersInit {
+  const headers: HeadersInit = {
+    Accept: "application/json"
+  };
+
+  const token = import.meta.env.VITE_API_AUTH_TOKEN;
+  if (typeof token === "string" && token.trim().length > 0) {
+    return {
+      ...headers,
+      Authorization: `Bearer ${token.trim()}`
+    };
+  }
+
+  return headers;
+}
+
 export async function requestJson<T>(url: string, options: RequestJsonOptions = {}): Promise<T> {
   let response: Response;
 
   try {
     response = await fetch(url, {
       method: "GET",
-      headers: {
-        Accept: "application/json"
-      },
+      headers: buildRequestHeaders(),
       signal: options.signal
     });
   } catch {

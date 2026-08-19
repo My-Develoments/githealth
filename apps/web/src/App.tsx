@@ -3,6 +3,7 @@ import { commandCenterActivityFeed, useGitHubHealthData } from "./data/useGitHub
 import { appRoutes, resolvePathForScreen, resolveScreenFromPath, type AppScreen } from "./navigation";
 import { CommandCenterScreen } from "./screens/CommandCenterScreen";
 import { GitHubSettingsScreen } from "./screens/GitHubSettingsScreen";
+import { GovernanceScreen } from "./screens/GovernanceScreen";
 import { OrganizationHealthScreen } from "./screens/OrganizationHealthScreen";
 import { RepositoryUniverseScreen } from "./screens/RepositoryUniverse/RepositoryUniverseScreen";
 import { SecurityPostureScreen } from "./screens/SecurityPostureScreen";
@@ -96,6 +97,22 @@ export function App() {
   if (screen === "security") {
     return (
       <SecurityPostureScreen
+        activeNavId={screen}
+        onNavigate={navigateTo}
+        healthData={githubHealth.viewModels.commandCenter}
+        repositoryData={githubHealth.viewModels.repositoryUniverse}
+        integrationState={githubHealth.state}
+        connection={githubHealth.connection}
+        integrationError={githubHealth.error}
+        onConnectGitHub={githubHealth.connectGitHub}
+        onRetry={githubHealth.reload}
+      />
+    );
+  }
+
+  if (screen === "governance") {
+    return (
+      <GovernanceScreen
         activeNavId={screen}
         onNavigate={navigateTo}
         healthData={githubHealth.viewModels.commandCenter}

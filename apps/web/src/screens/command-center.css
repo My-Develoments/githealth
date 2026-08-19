@@ -512,6 +512,85 @@
   grid-column: 1 / -1;
 }
 
+.gvs-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) repeat(2, minmax(260px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.gvs-card {
+  display: grid;
+  gap: 12px;
+}
+
+.gvs-summary {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(77, 215, 255, 0.22);
+  background:
+    linear-gradient(145deg, rgba(10, 19, 30, 0.9), rgba(8, 14, 26, 0.9)),
+    radial-gradient(85% 120% at 0% 0%, rgba(77, 215, 255, 0.18), transparent 60%);
+}
+
+.gvs-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.gvs-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-family: var(--gh-font-mono);
+  font-size: 12px;
+  color: var(--gh-color-text-muted);
+}
+
+.gvs-meta span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(234, 243, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gvs-signal-list,
+.gvs-insight-list,
+.gvs-repo-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.gvs-signal-list li,
+.gvs-insight-list li,
+.gvs-repo-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid rgba(234, 243, 255, 0.12);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(10, 17, 29, 0.54);
+}
+
+.gvs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gvs-state,
+.gvs-repos,
+.gvs-insights {
+  grid-column: 1 / -1;
+}
+
 .cc-hero {
   position: relative;
   display: grid;
@@ -1479,6 +1558,10 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
+  .gvs-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
   .sp-grid {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
@@ -1540,6 +1623,10 @@
     grid-template-columns: 1fr;
   }
 
+  .gvs-grid {
+    grid-template-columns: 1fr;
+  }
+
   .ohs-state,
   .ohs-insights {
     grid-column: auto;
@@ -1548,6 +1635,12 @@
   .shs-state,
   .shs-repos,
   .shs-insights {
+    grid-column: auto;
+  }
+
+  .gvs-state,
+  .gvs-repos,
+  .gvs-insights {
     grid-column: auto;
   }
 

@@ -131,13 +131,13 @@ describe("App navigation", () => {
   it("navigates to placeholder screens and updates the active state", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Governance" }));
+    fireEvent.click(screen.getByRole("button", { name: "CI / CD" }));
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/governance");
+      expect(window.location.pathname).toBe("/cicd");
     });
 
-    expect(screen.getByRole("button", { name: "Governance" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("button", { name: "CI / CD" }).getAttribute("aria-current")).toBe("page");
   });
 
   it("preserves repository universe navigation", async () => {
@@ -213,5 +213,19 @@ describe("App navigation", () => {
     expect(screen.getByRole("heading", { name: "Security Posture" })).toBeTruthy();
     expect(screen.getByText("Security Summary")).toBeTruthy();
     expect(screen.getByText("Repository Security Context")).toBeTruthy();
+  });
+
+  it("renders the dedicated Governance screen for the governance route", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Governance" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/governance");
+    });
+
+    expect(screen.getByRole("heading", { name: "Governance" })).toBeTruthy();
+    expect(screen.getByText("Governance Summary")).toBeTruthy();
+    expect(screen.getByText("Repository Governance Context")).toBeTruthy();
   });
 });

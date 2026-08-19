@@ -43,7 +43,7 @@ export const appRoutes: AppRouteDefinition[] = [
     path: "/governance",
     title: "Governance",
     description: "Branch protection, review enforcement, and repository policy adoption.",
-    availability: "planned"
+    availability: "live"
   },
   {
     id: "cicd",
@@ -71,7 +71,7 @@ export const appRoutes: AppRouteDefinition[] = [
     path: "/settings",
     title: "Settings",
     description: "Source configuration, onboarding state, and platform integration controls.",
-    availability: "planned"
+    availability: "live"
   }
 ];
 

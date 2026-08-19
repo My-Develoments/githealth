@@ -128,7 +128,7 @@ describe("App navigation", () => {
     expect(screen.getByRole("button", { name: "Settings" })).toBeTruthy();
   });
 
-  it("navigates to placeholder screens and updates the active state", async () => {
+  it("updates active state for functional sidebar navigation", async () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));

@@ -64,7 +64,7 @@ export const appRoutes: AppRouteDefinition[] = [
     path: "/reports",
     title: "Reports",
     description: "Exportable summaries, executive snapshots, and scheduled health reporting.",
-    availability: "planned"
+    availability: "live"
   },
   {
     id: "settings",

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { githubHealthScoreRoutes } from "./githubHealthScoreRoutes.js";
 import { healthScoreRoutes } from "./healthScoreRoutes.js";
 import { attachRequestContext } from "./requestContext.js";
+import { resetGitHubScoreCache } from "../application/githubScoringService.js";
 
 function restoreEnv(name: string, previous: string | undefined): void {
   if (typeof previous === "undefined") {
@@ -58,6 +59,7 @@ describe("githubHealthScoreRoutes", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    resetGitHubScoreCache();
     restoreEnv("GITHUB_TOKEN", previousToken);
     restoreEnv("API_AUTH_TOKEN", previousApiAuthToken);
     restoreEnv("ALLOWED_GITHUB_ORGS", previousAllowedGitHubOrgs);

@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LiveGitHubOrganizationAdapter } from "../infrastructure/github/live/liveGitHubOrganizationAdapter.js";
 import {
   getGitHubOrganizationScore,
   getGitHubRepositoryScoreById,
-  getGitHubRepositoryScores
+  getGitHubRepositoryScores,
+  resetGitHubScoreCache
 } from "./githubScoringService.js";
+import type { GitHubNormalizedOrganization } from "./githubNormalizedModels.js";
 
 describe("githubScoringService", () => {
   const previousToken = process.env.GITHUB_TOKEN;
@@ -11,6 +14,8 @@ describe("githubScoringService", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
+    resetGitHubScoreCache();
 
     if (typeof previousToken === "undefined") {
       delete process.env.GITHUB_TOKEN;
@@ -94,4 +99,44 @@ describe("githubScoringService", () => {
       }
     ]);
   });
+
+  it("caches live organization score results for a short TTL", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+
+    const fetchOrganizationData = vi.spyOn(LiveGitHubOrganizationAdapter.prototype, "fetchOrganizationData");
+    fetchOrganizationData.mockResolvedValue(buildLiveNormalizedOrganization("cache-org"));
+
+    const first = await getGitHubOrganizationScore("cache-org", "live");
+    const second = await getGitHubOrganizationScore("cache-org", "live");
+
+    expect(fetchOrganizationData).toHaveBeenCalledTimes(1);
+    expect(first.organization.organizationId).toBe("cache-org");
+    expect(second.organization.organizationId).toBe("cache-org");
+
+    vi.setSystemTime(new Date("2026-01-01T00:00:31.000Z"));
+
+    await getGitHubOrganizationScore("cache-org", "live");
+    expect(fetchOrganizationData).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it("does not apply live cache to mock source", async () => {
+    const result = await getGitHubOrganizationScore("githealth-labs", "mock");
+
+    expect(result.source).toBe("mock");
+    expect(result.organization.organizationId).toBe("githealth-labs");
+  });
 });
+
+function buildLiveNormalizedOrganization(organizationId: string): GitHubNormalizedOrganization {
+  return {
+    organizationId,
+    organizationName: "Org",
+    repositories: [],
+    issues: [],
+    fetchStatus: "complete",
+    calculatedAt: "2026-01-01T00:00:00.000Z"
+  };
+}

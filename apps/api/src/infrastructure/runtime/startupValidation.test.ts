@@ -22,6 +22,9 @@ describe("validateStartupConfiguration", () => {
   const previousAppId = process.env.GITHUB_APP_ID;
   const previousAppPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY;
   const previousAppInstallUrl = process.env.GITHUB_APP_INSTALL_URL;
+  const previousDatabaseUrl = process.env.DATABASE_URL;
+  const previousDatabaseSslMode = process.env.DATABASE_SSL_MODE;
+  const previousNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
     resetStartupValidationStatusForTests();
@@ -36,6 +39,9 @@ describe("validateStartupConfiguration", () => {
     restoreEnv("GITHUB_APP_ID", previousAppId);
     restoreEnv("GITHUB_APP_PRIVATE_KEY", previousAppPrivateKey);
     restoreEnv("GITHUB_APP_INSTALL_URL", previousAppInstallUrl);
+    restoreEnv("DATABASE_URL", previousDatabaseUrl);
+    restoreEnv("DATABASE_SSL_MODE", previousDatabaseSslMode);
+    restoreEnv("NODE_ENV", previousNodeEnv);
   });
 
   it("throws for invalid port", () => {
@@ -67,9 +73,20 @@ describe("validateStartupConfiguration", () => {
     process.env.GITHUB_ENDPOINT_RATE_LIMIT_MAX_REQUESTS = "60";
     process.env.GITHUB_SCORE_CACHE_TTL_MS = "30000";
     process.env.GITHUB_API_BASE_URL = "https://api.github.com";
+    process.env.NODE_ENV = "test";
 
     expect(() => validateStartupConfiguration()).not.toThrow();
     expect(getStartupValidationStatus()).toBe("ok");
+  });
+
+  it("throws for missing database configuration outside test mode", () => {
+    process.env.PORT = "4000";
+    process.env.API_AUTH_TOKEN = "issue23-token";
+    process.env.GITHUB_API_BASE_URL = "https://api.github.com";
+    process.env.NODE_ENV = "production";
+    delete process.env.DATABASE_URL;
+
+    expect(() => validateStartupConfiguration()).toThrow("Invalid DATABASE_URL value");
   });
 
   it("throws for invalid cache TTL", () => {
@@ -79,6 +96,17 @@ describe("validateStartupConfiguration", () => {
     process.env.GITHUB_SCORE_CACHE_TTL_MS = "0";
 
     expect(() => validateStartupConfiguration()).toThrow("Invalid GITHUB_SCORE_CACHE_TTL_MS value.");
+  });
+
+  it("throws for invalid database ssl mode outside test mode", () => {
+    process.env.PORT = "4000";
+    process.env.API_AUTH_TOKEN = "issue23-token";
+    process.env.GITHUB_API_BASE_URL = "https://api.github.com";
+    process.env.NODE_ENV = "production";
+    process.env.DATABASE_URL = "postgres://user:password@localhost:5432/githealth";
+    process.env.DATABASE_SSL_MODE = "invalid";
+
+    expect(() => validateStartupConfiguration()).toThrow("Invalid DATABASE_SSL_MODE value");
   });
 
   it("throws when app mode is enabled without onboarding or installation configuration", () => {

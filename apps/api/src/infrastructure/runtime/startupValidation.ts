@@ -1,3 +1,5 @@
+import { getAuthStore } from "../auth/authStore.js";
+import { getDatabaseConfig } from "../persistence/databaseConfig.js";
 import { getGitHubConfig } from "../github/config.js";
 import { getGitHubScoreCacheConfig } from "./githubScoreCacheConfig.js";
 import { getApiProtectionConfig } from "../security/apiProtectionConfig.js";
@@ -33,9 +35,28 @@ export function validateStartupConfiguration(): void {
     // Validate API protection configuration deterministically at startup.
     getApiProtectionConfig();
 
+    if (process.env.NODE_ENV !== "test") {
+      getDatabaseConfig();
+    }
+
     startupValidationStatus = "ok";
   } catch (error) {
     startupValidationStatus = "error";
     throw error;
+  }
+}
+
+export async function initializePersistentInfrastructure(): Promise<void> {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+
+  try {
+    const authStore = getAuthStore();
+    await authStore.initialize();
+  } catch {
+    throw new Error(
+      "PostgreSQL startup check failed. Verify DATABASE_URL, DATABASE_SSL_MODE, network access, and database permissions."
+    );
   }
 }

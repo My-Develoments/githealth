@@ -106,11 +106,26 @@ jobs:
   runtime-smoke:
     name: Runtime Smoke Validation
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: githealth
+          POSTGRES_PASSWORD: githealth
+          POSTGRES_DB: githealth
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U githealth -d githealth"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     env:
       API_AUTH_TOKEN: smoke-token
       ALLOWED_GITHUB_ORGS: githealth-labs
       GITHUB_ENDPOINT_RATE_LIMIT_WINDOW_MS: 60000
       GITHUB_ENDPOINT_RATE_LIMIT_MAX_REQUESTS: 60
+      DATABASE_URL: postgres://githealth:githealth@127.0.0.1:5432/githealth
       PORT: 4010
     steps:
       - name: Checkout repository

@@ -31,6 +31,12 @@ export type GitHubHealthAdapterFailure = {
     message: string;
     code: string;
     status: number;
+    upstreamStatus?: number;
+    organization?: string;
+    requestedOrganization?: string;
+    selectedOrganization?: string;
+    allowedOrganizations?: string[];
+    accessibleOrganizations?: string[];
   };
 };
 
@@ -46,10 +52,18 @@ function buildInstallationSessionHeaders(installationSession: string | undefined
   };
 }
 
-export async function fetchGitHubHealthData(signal?: AbortSignal, installationSession?: string): Promise<GitHubHealthAdapterResult> {
+export async function fetchGitHubHealthData(
+  signal?: AbortSignal,
+  installationSession?: string,
+  organizationOverride?: string
+): Promise<GitHubHealthAdapterResult> {
   const config = resolveGitHubHealthConfig();
-  const organizationUrl = buildEndpoint(config.apiBaseUrl, "/health-score/github/organization", config.organization, config.source);
-  const repositoriesUrl = buildEndpoint(config.apiBaseUrl, "/health-score/github/repositories", config.organization, config.source);
+  const organization =
+    typeof organizationOverride === "string" && organizationOverride.trim().length > 0
+      ? organizationOverride.trim()
+      : config.organization;
+  const organizationUrl = buildEndpoint(config.apiBaseUrl, "/health-score/github/organization", organization, config.source);
+  const repositoriesUrl = buildEndpoint(config.apiBaseUrl, "/health-score/github/repositories", organization, config.source);
   const headers = buildInstallationSessionHeaders(installationSession);
 
   try {
@@ -80,7 +94,17 @@ export async function fetchGitHubHealthData(signal?: AbortSignal, installationSe
       error: {
         message: apiError.message || "Unable to load GitHub health data.",
         code: apiError.code || "UPSTREAM_UNAVAILABLE",
-        status: Number.isFinite(apiError.status) ? apiError.status : 0
+        status: Number.isFinite(apiError.status) ? apiError.status : 0,
+        ...(Number.isFinite(apiError.upstreamStatus) ? { upstreamStatus: apiError.upstreamStatus } : {}),
+        ...(typeof apiError.organization === "string" ? { organization: apiError.organization } : {}),
+        ...(typeof apiError.requestedOrganization === "string"
+          ? { requestedOrganization: apiError.requestedOrganization }
+          : {}),
+        ...(typeof apiError.selectedOrganization === "string" ? { selectedOrganization: apiError.selectedOrganization } : {}),
+        ...(Array.isArray(apiError.allowedOrganizations) ? { allowedOrganizations: apiError.allowedOrganizations } : {}),
+        ...(Array.isArray(apiError.accessibleOrganizations)
+          ? { accessibleOrganizations: apiError.accessibleOrganizations }
+          : {})
       }
     };
   }

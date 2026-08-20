@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { useAuthSession } from "./data/useAuthSession";
 import { commandCenterActivityFeed, useGitHubHealthData } from "./data/useGitHubHealthData";
+import { AuthLoadingScreen, AuthScreen } from "./screens/AuthScreen";
 import { appRoutes, resolvePathForScreen, resolveScreenFromPath, type AppScreen } from "./navigation";
 import { CommandCenterScreen } from "./screens/CommandCenterScreen";
 import { CiCdHealthScreen } from "./screens/CiCdHealthScreen";
@@ -20,6 +22,31 @@ function syncScreenWithUrl(nextScreen: AppScreen, mode: "push" | "replace" = "pu
 }
 
 export function App() {
+  const auth = useAuthSession();
+
+  if (auth.status === "loading") {
+    return <AuthLoadingScreen />;
+  }
+
+  if (auth.status !== "authenticated" || !auth.session) {
+    return (
+      <AuthScreen
+        isLoading={auth.isContinuingWithGitHub}
+        error={auth.error?.message}
+        onContinueWithGitHub={() => auth.continueWithGitHub()}
+      />
+    );
+  }
+
+  return <AuthenticatedApp onLogout={auth.signOut} authSession={auth.session} />;
+}
+
+type AuthenticatedAppProps = {
+  authSession: NonNullable<ReturnType<typeof useAuthSession>["session"]>;
+  onLogout: () => Promise<void>;
+};
+
+function AuthenticatedApp({ authSession, onLogout }: AuthenticatedAppProps) {
   const [screen, setScreen] = useState<AppScreen>(() => resolveScreenFromPath(window.location.pathname));
   const githubHealth = useGitHubHealthData();
 
@@ -49,6 +76,7 @@ export function App() {
     activeNavId: screen,
     onNavigate: navigateTo,
     integrationState: githubHealth.state,
+    isRefreshing: githubHealth.isRefreshing,
     connection: githubHealth.connection,
     integrationError: githubHealth.error,
     onConnectGitHub: githubHealth.connectGitHub,
@@ -61,6 +89,7 @@ export function App() {
         onBack={() => navigateTo("command-center")}
         viewModel={githubHealth.viewModels.repositoryUniverse}
         integrationState={githubHealth.state}
+        isRefreshing={githubHealth.isRefreshing}
         integrationError={githubHealth.error}
         onRetry={githubHealth.reload}
       />
@@ -84,10 +113,17 @@ export function App() {
         onNavigate={navigateTo}
         connection={githubHealth.connection}
         integrationState={githubHealth.state}
+        isRefreshing={githubHealth.isRefreshing}
         integrationError={githubHealth.error}
         connectedOrganization={connectedOrganization}
+        organizationOptions={githubHealth.organizationOptions}
+        currentUserName={authSession.user.displayName}
+        currentWorkspaceName={authSession.workspace.name}
         onConnectGitHub={githubHealth.connectGitHub}
+        onDisconnectGitHub={githubHealth.disconnectGitHub}
+        onSelectOrganization={githubHealth.selectOrganization}
         onRetry={githubHealth.reload}
+        onLogout={onLogout}
       />
     );
   }
@@ -148,6 +184,7 @@ export function App() {
       onExploreUniverse={() => navigateTo("repository-universe")}
       healthData={githubHealth.viewModels.commandCenter}
       activityState={githubHealth.commandCenterActivity}
+      isRefreshing={githubHealth.isRefreshing}
       connection={githubHealth.connection}
       integrationError={githubHealth.error}
       onConnectGitHub={githubHealth.connectGitHub}

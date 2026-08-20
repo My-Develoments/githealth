@@ -9,9 +9,11 @@ import {
   resolveSectionConnectionLabel,
   resolveSectionConnectionTone,
   resolveSectionDataState,
+  resolveSectionProviderLabel,
   scoreTone,
   shouldShowSectionConnectAction
 } from "./sectionScreenShared";
+import { useAsyncActionState } from "./useAsyncActionState";
 import "./command-center.css";
 
 type ReportsScreenProps = {
@@ -20,6 +22,7 @@ type ReportsScreenProps = {
   healthData: CommandCenterHealthViewModel;
   repositoryData: RepositoryUniverseViewModel;
   integrationState: GitHubHealthIntegrationState;
+  isRefreshing?: boolean;
   connection: GitHubConnectionViewModel;
   integrationError?: {
     message: string;
@@ -40,12 +43,14 @@ export function ReportsScreen({
   healthData,
   repositoryData,
   integrationState,
+  isRefreshing = false,
   connection,
   integrationError,
   onConnectGitHub,
   onRetry
 }: ReportsScreenProps) {
   const dataState = resolveSectionDataState(integrationState);
+  const isInitialLoading = dataState === "loading" && !isRefreshing;
   const repositories = repositoryData.repositories;
   const topRepositoryContext = [...repositories]
     .filter((repository) => repository.healthScore > 0)
@@ -57,6 +62,8 @@ export function ReportsScreen({
   const repositoryUniverseHighlights = repositoryData.insights.slice(0, 3);
   const showConnectAction = shouldShowSectionConnectAction(connection);
   const isConnectActionDisabled = isSectionConnectActionDisabled(connection);
+  const connectAction = useAsyncActionState();
+  const retryAction = useAsyncActionState();
 
   return (
     <div className="cc-shell rhs-shell">
@@ -123,6 +130,7 @@ export function ReportsScreen({
           <div className="cc-header-controls">
             <Badge tone={healthData.source === "mock" ? "warning" : "healthy"}>{`Source: ${healthData.source}`}</Badge>
             <Badge tone={resolveSectionConnectionTone(connection.status)}>{resolveSectionConnectionLabel(connection)}</Badge>
+            {isRefreshing ? <Badge tone="neutral">Refreshing</Badge> : null}
           </div>
         </header>
 
@@ -132,21 +140,33 @@ export function ReportsScreen({
               <Heading as="h3" size="sm">
                 Executive Summary
               </Heading>
-              <Badge tone={scoreTone(healthData.score)}>{healthData.scoreStatus}</Badge>
+              <Badge tone={isInitialLoading ? "neutral" : scoreTone(healthData.score)}>
+                {isInitialLoading ? "Loading" : healthData.scoreStatus}
+              </Badge>
             </div>
 
-            <div className="rhs-score">
-              <span className="rhs-score__value">{healthData.score}</span>
-              <span className="rhs-score__label">Overall score</span>
-            </div>
+            {isInitialLoading ? (
+              <div className="cc-skeleton" aria-label="Loading report executive summary">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : (
+              <>
+                <div className="rhs-score">
+                  <span className="rhs-score__value">{healthData.score}</span>
+                  <span className="rhs-score__label">Overall score</span>
+                </div>
 
-            <div className="rhs-meta">
-              <span>Repositories: {healthData.totalRepositories}</span>
-              <span>Healthy: {healthData.pulse.healthy}</span>
-              <span>Warning: {healthData.pulse.warning}</span>
-              <span>Critical: {healthData.pulse.critical}</span>
-              <span>Last scan: {healthData.pulse.lastScan}</span>
-            </div>
+                <div className="rhs-meta">
+                  <span>Repositories: {healthData.totalRepositories}</span>
+                  <span>Healthy: {healthData.pulse.healthy}</span>
+                  <span>Warning: {healthData.pulse.warning}</span>
+                  <span>Critical: {healthData.pulse.critical}</span>
+                  <span>Last scan: {healthData.pulse.lastScan}</span>
+                </div>
+              </>
+            )}
           </Panel>
 
           <Panel tone="subtle" className="rhs-card cc-reveal cc-reveal--signals">
@@ -157,7 +177,13 @@ export function ReportsScreen({
               <Badge tone={integrationState === "partial" ? "warning" : "neutral"}>{integrationState}</Badge>
             </div>
 
-            {categorySignals.length === 0 ? (
+            {isInitialLoading ? (
+              <div className="cc-skeleton" aria-label="Loading report signals">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : categorySignals.length === 0 ? (
               <Text size="sm" tone="muted">No category signals are available for the current source.</Text>
             ) : (
               <ul className="rhs-signal-list" aria-label="Report category signals">
@@ -176,7 +202,7 @@ export function ReportsScreen({
               <Heading as="h3" size="sm">
                 Data Readiness
               </Heading>
-              <Badge tone={resolveSectionConnectionTone(connection.status)}>{connection.provider === "app" ? "GitHub App" : "PAT"}</Badge>
+              <Badge tone={resolveSectionConnectionTone(connection.status)}>{resolveSectionProviderLabel(connection)}</Badge>
             </div>
 
             <Text size="sm" tone="secondary">
@@ -196,12 +222,12 @@ export function ReportsScreen({
                   variant="primary"
                   size="md"
                   onClick={() => {
-                    void onConnectGitHub?.();
+                    void connectAction.run(onConnectGitHub);
                   }}
-                  disabled={isConnectActionDisabled}
+                  disabled={isConnectActionDisabled || connectAction.isPending}
                   aria-label={resolveSectionConnectActionLabel(connection)}
                 >
-                  {resolveSectionConnectActionLabel(connection)}
+                  {connectAction.isPending ? "Connecting..." : resolveSectionConnectActionLabel(connection)}
                 </Button>
               </div>
             ) : null}
@@ -225,8 +251,16 @@ export function ReportsScreen({
                 The API request completed, but no organization or repository report context was returned for this source.
               </Text>
               <div className="rhs-actions">
-                <Button variant="secondary" size="md" onClick={() => onRetry?.()} aria-label="Retry reports">
-                  Retry
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    void retryAction.run(onRetry);
+                  }}
+                  disabled={retryAction.isPending}
+                  aria-label="Retry reports"
+                >
+                  {retryAction.isPending ? "Retrying..." : "Retry"}
                 </Button>
               </div>
             </Panel>
@@ -242,8 +276,16 @@ export function ReportsScreen({
               </Text>
               {integrationError?.code ? <Badge tone="critical">{integrationError.code}</Badge> : null}
               <div className="rhs-actions">
-                <Button variant="secondary" size="md" onClick={() => onRetry?.()} aria-label="Retry reports">
-                  Retry
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    void retryAction.run(onRetry);
+                  }}
+                  disabled={retryAction.isPending}
+                  aria-label="Retry reports"
+                >
+                  {retryAction.isPending ? "Retrying..." : "Retry"}
                 </Button>
               </div>
             </Panel>

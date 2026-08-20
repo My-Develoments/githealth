@@ -11,12 +11,14 @@ import type { RepositoryUniverseViewModel } from "../../data/githubHealthViewMap
 import { RepositoryDetailsPanel } from "./components/RepositoryDetailsPanel";
 import { UniverseInsightsPanel } from "./components/UniverseInsightsPanel";
 import { UniverseVisualization } from "./components/UniverseVisualization";
+import { useAsyncActionState } from "../useAsyncActionState";
 import "./repository-universe.css";
 
 type RepositoryUniverseScreenProps = {
   onBack: () => void;
   viewModel: RepositoryUniverseViewModel;
   integrationState: GitHubHealthIntegrationState;
+  isRefreshing?: boolean;
   integrationError: {
     message: string;
     code: string;
@@ -49,6 +51,13 @@ function resolveErrorGuidance(error: RepositoryUniverseScreenProps["integrationE
     return {
       title: "GitHub Permission Denied",
       action: "Grant the required organization read permissions, then retry."
+    };
+  }
+
+  if (error.code === "NOT_FOUND" || error.status === 404) {
+    return {
+      title: "Organization or repository not found",
+      action: "Verify the selected organization and repository visibility, then retry the universe scan."
     };
   }
 
@@ -112,7 +121,7 @@ function matchesDomain(repository: UniverseRepository, filter: DomainFilter): bo
   return repository.qualityScore < 88;
 }
 
-export function RepositoryUniverseScreen({ onBack, viewModel, integrationState, integrationError, onRetry }: RepositoryUniverseScreenProps) {
+export function RepositoryUniverseScreen({ onBack, viewModel, integrationState, isRefreshing = false, integrationError, onRetry }: RepositoryUniverseScreenProps) {
   const reducedMotion = usePrefersReducedMotion();
   const [statusFilter, setStatusFilter] = useState<"all" | HealthStatus>("all");
   const [domainFilter, setDomainFilter] = useState<DomainFilter>("all");
@@ -121,6 +130,7 @@ export function RepositoryUniverseScreen({ onBack, viewModel, integrationState, 
   const [hoveredRepositoryId, setHoveredRepositoryId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const retryAction = useAsyncActionState();
 
   const dataState =
     integrationState === "loading"
@@ -194,12 +204,21 @@ export function RepositoryUniverseScreen({ onBack, viewModel, integrationState, 
         <div className="ru-header-actions">
           <Badge tone="neutral">{viewModel.organization.repositories} repositories</Badge>
           <Badge tone={viewModel.source === "live" ? "healthy" : "warning"}>{`source:${viewModel.source}`}</Badge>
+          {isRefreshing ? <Badge tone="neutral">refreshing</Badge> : null}
           <Badge tone={integrationState === "partial" ? "warning" : integrationState === "failed" || integrationState === "error" ? "critical" : "healthy"}>
             {integrationState}
           </Badge>
           {(integrationState === "error" || integrationState === "failed") && (
-            <Button variant="secondary" size="sm" onClick={onRetry} aria-label="Retry repository universe">
-              Retry
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void retryAction.run(onRetry);
+              }}
+              disabled={retryAction.isPending}
+              aria-label="Retry repository universe"
+            >
+              {retryAction.isPending ? "Retrying..." : "Retry"}
             </Button>
           )}
         </div>
@@ -278,8 +297,15 @@ export function RepositoryUniverseScreen({ onBack, viewModel, integrationState, 
             </Text>
             {integrationError?.code ? <Badge tone="warning">{integrationError.code}</Badge> : null}
             <div className="ru-error-actions">
-              <Button variant="primary" onClick={onRetry} aria-label="Retry repository universe">
-                Retry Universe
+              <Button
+                variant="primary"
+                onClick={() => {
+                  void retryAction.run(onRetry);
+                }}
+                disabled={retryAction.isPending}
+                aria-label="Retry repository universe"
+              >
+                {retryAction.isPending ? "Retrying Universe..." : "Retry Universe"}
               </Button>
               <Button variant="secondary" onClick={onBack}>
                 Return To Command Center
@@ -299,8 +325,15 @@ export function RepositoryUniverseScreen({ onBack, viewModel, integrationState, 
               The API request succeeded but returned zero repositories for this organization/source.
             </Text>
             <div className="ru-empty-actions">
-              <Button variant="primary" onClick={onRetry} aria-label="Retry repository universe">
-                Retry Universe
+              <Button
+                variant="primary"
+                onClick={() => {
+                  void retryAction.run(onRetry);
+                }}
+                disabled={retryAction.isPending}
+                aria-label="Retry repository universe"
+              >
+                {retryAction.isPending ? "Retrying Universe..." : "Retry Universe"}
               </Button>
               <Button variant="secondary" onClick={onBack}>
                 Return To Command Center

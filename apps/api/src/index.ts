@@ -1,11 +1,13 @@
 import express from "express";
+import { authRoutes } from "./http/authRoutes.js";
+import { requireAuthenticatedAppAccess } from "./http/authSession.js";
 import { githubConnectionRoutes } from "./http/githubConnectionRoutes.js";
 import { githubHealthScoreRoutes } from "./http/githubHealthScoreRoutes.js";
 import { healthScoreRoutes } from "./http/healthScoreRoutes.js";
 import { opsRoutes } from "./http/opsRoutes.js";
 import { isLocalDevelopmentCorsEnabled, localDevelopmentCors } from "./http/localDevelopmentCors.js";
 import { requestLogger } from "./infrastructure/observability/requestLogger.js";
-import { validateStartupConfiguration } from "./infrastructure/runtime/startupValidation.js";
+import { initializePersistentInfrastructure, validateStartupConfiguration } from "./infrastructure/runtime/startupValidation.js";
 import { attachRequestContext } from "./http/requestContext.js";
 import { sendApiError } from "./http/errorEnvelope.js";
 import { unexpectedErrorHandler } from "./http/unexpectedErrorHandler.js";
@@ -17,6 +19,7 @@ type CreateAppOptions = {
 export function createApp(options: CreateAppOptions = {}) {
   const app = express();
   app.disable("x-powered-by");
+  app.use(express.json({ limit: "32kb" }));
 
   if (isLocalDevelopmentCorsEnabled()) {
     app.use(localDevelopmentCors);
@@ -24,10 +27,11 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use(attachRequestContext);
   app.use(requestLogger);
   app.use(opsRoutes);
-  app.use("/github/connection", githubConnectionRoutes);
+  app.use("/auth", authRoutes);
+  app.use("/github/connection", requireAuthenticatedAppAccess, githubConnectionRoutes);
 
   app.use("/health-score", healthScoreRoutes);
-  app.use("/health-score/github", githubHealthScoreRoutes);
+  app.use("/health-score/github", requireAuthenticatedAppAccess, githubHealthScoreRoutes);
 
   options.additionalRoutes?.(app);
 
@@ -44,8 +48,9 @@ export function createApp(options: CreateAppOptions = {}) {
   return app;
 }
 
-function start(): void {
+async function start(): Promise<void> {
   validateStartupConfiguration();
+  await initializePersistentInfrastructure();
 
   const app = createApp();
   const port = Number(process.env.PORT) || 4000;
@@ -55,4 +60,4 @@ function start(): void {
   });
 }
 
-start();
+await start();

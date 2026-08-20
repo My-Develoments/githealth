@@ -9,20 +9,31 @@ vi.mock("./githubHealthDataAdapter", () => ({
 
 vi.mock("./githubConnectionDataAdapter", () => ({
   fetchGitHubConnectionStatus: vi.fn(),
-  startGitHubConnection: vi.fn()
+  startGitHubConnection: vi.fn(),
+  disconnectGitHubConnection: vi.fn(),
+  selectGitHubConnectionOrganization: vi.fn()
 }));
 
 import { fetchGitHubHealthData } from "./githubHealthDataAdapter";
-import { fetchGitHubConnectionStatus, startGitHubConnection } from "./githubConnectionDataAdapter";
+import {
+  disconnectGitHubConnection,
+  fetchGitHubConnectionStatus,
+  selectGitHubConnectionOrganization,
+  startGitHubConnection
+} from "./githubConnectionDataAdapter";
 
 const mockedFetchGitHubHealthData = vi.mocked(fetchGitHubHealthData);
 const mockedFetchGitHubConnectionStatus = vi.mocked(fetchGitHubConnectionStatus);
 const mockedStartGitHubConnection = vi.mocked(startGitHubConnection);
+const mockedDisconnectGitHubConnection = vi.mocked(disconnectGitHubConnection);
+const mockedSelectGitHubConnectionOrganization = vi.mocked(selectGitHubConnectionOrganization);
 
 beforeEach(() => {
   mockedFetchGitHubHealthData.mockReset();
   mockedFetchGitHubConnectionStatus.mockReset();
   mockedStartGitHubConnection.mockReset();
+  mockedDisconnectGitHubConnection.mockReset();
+  mockedSelectGitHubConnectionOrganization.mockReset();
   window.history.replaceState({}, "", "/");
   mockedFetchGitHubHealthData.mockResolvedValue(successResult("ready"));
   mockedFetchGitHubConnectionStatus.mockResolvedValue({
@@ -126,22 +137,45 @@ describe("useGitHubHealthData", () => {
     expect(mockedFetchGitHubHealthData).not.toHaveBeenCalled();
   });
 
-  it("consumes callback completion, stores the opaque session token, and finishes connected", async () => {
+  it("does not fetch live health data when PAT mode is not configured", async () => {
+    mockedFetchGitHubConnectionStatus.mockResolvedValueOnce({
+      provider: "pat",
+      status: "not_configured",
+      isConnected: false,
+      canConnect: false,
+      hasInstallationId: false,
+      installUrlConfigured: false,
+      callbackRedirectConfigured: false,
+      message: "Server-side GITHUB_TOKEN is configured, but ALLOWED_GITHUB_ORGS is empty."
+    });
+
+    const { result } = renderHook(() => useGitHubHealthData());
+
+    await waitFor(() => {
+      expect(result.current.connection.status).toBe("not_configured");
+    });
+
+    expect(result.current.state).toBe("empty");
+    expect(mockedFetchGitHubHealthData).not.toHaveBeenCalled();
+  });
+
+  it("consumes callback completion and finishes connected", async () => {
     window.history.replaceState(
       {},
       "",
-      "/?github_app_callback=received&github_app_status=installation_completed&github_app_session=opaque-session&github_app_message=Installed"
+      "/?github_oauth_callback=received&github_oauth_status=connected&github_oauth_login=octocat"
     );
     mockedFetchGitHubConnectionStatus.mockResolvedValueOnce({
-      provider: "app",
+      provider: "oauth",
       status: "connected",
       isConnected: true,
       canConnect: true,
-      hasInstallationId: true,
-      installUrlConfigured: true,
+      hasInstallationId: false,
+      installUrlConfigured: false,
       callbackRedirectConfigured: true,
-      message: "GitHub App installation is connected.",
-      organization: "githealth-labs"
+      message: "GitHub OAuth is connected for this workspace.",
+      organization: "githealth-labs",
+      githubLogin: "octocat"
     });
     mockedFetchGitHubHealthData.mockResolvedValueOnce(successResult("ready"));
 
@@ -156,6 +190,8 @@ describe("useGitHubHealthData", () => {
     });
     expect(window.location.search).toBe("");
     expect(result.current.connection.organization).toBe("githealth-labs");
+    expect(result.current.connection.githubLogin).toBe("octocat");
+    expect(mockedFetchGitHubHealthData.mock.calls[0]?.[2]).toBe("githealth-labs");
   });
 
   it("surfaces callback authorization errors without calling live health fetch", async () => {
@@ -181,11 +217,11 @@ describe("useGitHubHealthData", () => {
     expect(mockedFetchGitHubHealthData).not.toHaveBeenCalled();
   });
 
-  it("starts onboarding and redirects the browser to the backend-provided GitHub install URL", async () => {
+  it("starts onboarding and redirects the browser to the backend-provided GitHub OAuth URL", async () => {
     mockedStartGitHubConnection.mockResolvedValueOnce({
-      provider: "app",
+      provider: "oauth",
       status: "ready_to_connect",
-      connectUrl: "https://github.com/apps/githealth/installations/new"
+      connectUrl: "https://github.com/login/oauth/authorize?client_id=test-client"
     });
     const assignSpy = vi.spyOn(window.location, "assign").mockImplementation(() => undefined);
 
@@ -200,7 +236,7 @@ describe("useGitHubHealthData", () => {
     });
 
     expect(mockedStartGitHubConnection).toHaveBeenCalledTimes(1);
-    expect(assignSpy).toHaveBeenCalledWith("https://github.com/apps/githealth/installations/new");
+    expect(assignSpy).toHaveBeenCalledWith("https://github.com/login/oauth/authorize?client_id=test-client");
   });
 
   it("surfaces onboarding start failures as retryable error state", async () => {
@@ -227,6 +263,123 @@ describe("useGitHubHealthData", () => {
       message: "Unable to start GitHub App onboarding.",
       status: 503
     });
+  });
+
+  it("disconnects github and reloads connection state", async () => {
+    mockedDisconnectGitHubConnection.mockResolvedValueOnce({ ok: true });
+    mockedFetchGitHubConnectionStatus
+      .mockResolvedValueOnce({
+        provider: "oauth",
+        status: "connected",
+        isConnected: true,
+        canConnect: true,
+        hasInstallationId: false,
+        installUrlConfigured: false,
+        callbackRedirectConfigured: true,
+        message: "GitHub OAuth is connected for this workspace.",
+        githubLogin: "octocat"
+      })
+      .mockResolvedValueOnce({
+        provider: "oauth",
+        status: "ready_to_connect",
+        isConnected: false,
+        canConnect: true,
+        hasInstallationId: false,
+        installUrlConfigured: false,
+        callbackRedirectConfigured: true,
+        message: "GitHub OAuth is configured and ready to connect."
+      });
+
+    const { result } = renderHook(() => useGitHubHealthData());
+
+    await waitFor(() => {
+      expect(result.current.connection.status).toBe("connected");
+    });
+
+    await act(async () => {
+      await result.current.disconnectGitHub();
+    });
+
+    await waitFor(() => {
+      expect(result.current.connection.status).toBe("ready_to_connect");
+    });
+
+    expect(mockedDisconnectGitHubConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it("selects OAuth organization and reloads live health data", async () => {
+    mockedFetchGitHubConnectionStatus.mockResolvedValueOnce({
+      provider: "oauth",
+      status: "connected",
+      isConnected: true,
+      canConnect: true,
+      hasInstallationId: false,
+      installUrlConfigured: false,
+      callbackRedirectConfigured: true,
+      message: "GitHub OAuth is connected for this workspace.",
+      organization: "xebia-playground",
+      organizationOptions: ["xebia-playground", "xebia"],
+      githubLogin: "octocat"
+    });
+    mockedSelectGitHubConnectionOrganization.mockResolvedValueOnce({
+      selectedOrganization: "xebia",
+      organizations: ["xebia-playground", "xebia"]
+    });
+    mockedFetchGitHubConnectionStatus.mockResolvedValueOnce({
+      provider: "oauth",
+      status: "connected",
+      isConnected: true,
+      canConnect: true,
+      hasInstallationId: false,
+      installUrlConfigured: false,
+      callbackRedirectConfigured: true,
+      message: "GitHub OAuth is connected for this workspace.",
+      organization: "xebia",
+      organizationOptions: ["xebia-playground", "xebia"],
+      githubLogin: "octocat"
+    });
+
+    const { result } = renderHook(() => useGitHubHealthData());
+
+    await waitFor(() => {
+      expect(result.current.connection.organization).toBe("xebia-playground");
+    });
+
+    await act(async () => {
+      await result.current.selectOrganization("xebia");
+    });
+
+    await waitFor(() => {
+      expect(result.current.connection.organization).toBe("xebia");
+    });
+
+    expect(mockedSelectGitHubConnectionOrganization).toHaveBeenCalledWith("xebia");
+  });
+
+  it("avoids live health fetch when no organization is resolved for connected OAuth session", async () => {
+    mockedFetchGitHubConnectionStatus.mockResolvedValueOnce({
+      provider: "oauth",
+      status: "connected",
+      isConnected: true,
+      canConnect: true,
+      hasInstallationId: false,
+      installUrlConfigured: false,
+      callbackRedirectConfigured: true,
+      message: "GitHub OAuth is connected for this workspace."
+    });
+
+    const { result } = renderHook(() => useGitHubHealthData());
+
+    await waitFor(() => {
+      expect(result.current.state).toBe("empty");
+    });
+
+    expect(result.current.error).toEqual({
+      code: "INVALID_REQUEST",
+      message: "No organization is selected for live GitHub data. Select an organization in GitHub Settings.",
+      status: 409
+    });
+    expect(mockedFetchGitHubHealthData).not.toHaveBeenCalled();
   });
 });
 

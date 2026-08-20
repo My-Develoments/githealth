@@ -42,7 +42,7 @@ describe("CommandCenterScreen source isolation", () => {
     render(<CommandCenterScreen healthData={undefined} activityState={undefined} recentActivity={undefined} />);
 
     expect(screen.getByText("Source: live")).toBeTruthy();
-    expect(screen.getByText("Trend unavailable")).toBeTruthy();
+    expect(screen.getByLabelText("Loading organization health score")).toBeTruthy();
     expect(screen.getByText("Achievement data is unavailable in live mode.")).toBeTruthy();
     expect(screen.queryByText("Security Champion")).toBeNull();
     expect(screen.queryByText("Good morning, Kuldeep.")).toBeNull();
@@ -65,7 +65,7 @@ describe("CommandCenterScreen source isolation", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry health check" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Retry health check" })[0]);
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
@@ -77,14 +77,14 @@ describe("CommandCenterScreen source isolation", () => {
         healthData={buildHealthModel("live")}
         activityState={{ isLoading: false, isEmpty: true, hasError: false }}
         connection={{
-          provider: "app",
+          provider: "oauth",
           status: "ready_to_connect",
           isConnected: false,
           canConnect: true,
           hasInstallationId: false,
           installUrlConfigured: true,
           callbackRedirectConfigured: false,
-          message: "GitHub App is configured and ready to connect."
+          message: "GitHub OAuth is configured and ready to connect."
         }}
         onConnectGitHub={onConnectGitHub}
       />
@@ -93,8 +93,8 @@ describe("CommandCenterScreen source isolation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }));
     expect(onConnectGitHub).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Ready to connect")).toBeTruthy();
-    expect(screen.getByText("GitHub App Onboarding")).toBeTruthy();
-    expect(screen.getByText("Install the GitHub App to unlock live organization scans, health scoring, and repository insights.")).toBeTruthy();
+    expect(screen.getByText("GitHub OAuth Connection")).toBeTruthy();
+    expect(screen.getByText("Continue with GitHub to authorize your account and load your live organization health data through secure backend APIs.")).toBeTruthy();
   });
 
   it("shows a connected state when GitHub App onboarding has completed", () => {
@@ -164,6 +164,47 @@ describe("CommandCenterScreen source isolation", () => {
     expect(screen.queryByText("No repository data available yet.")).toBeNull();
     expect(screen.queryByText("No active loading jobs.")).toBeNull();
     expect(screen.getByText("Data Loading")).toBeTruthy();
+    expect(screen.getByLabelText("Loading organization health score")).toBeTruthy();
+    expect(screen.getByLabelText("Loading organization pulse")).toBeTruthy();
+    expect(screen.queryByLabelText("Health score 0")).toBeNull();
+  });
+
+  it("renders real live score visuals after successful response", () => {
+    render(
+      <CommandCenterScreen
+        healthData={buildHealthModel("live")}
+        activityState={{ isLoading: false, isEmpty: false, hasError: false }}
+      />
+    );
+
+    expect(screen.getByLabelText(/Health score/)).toBeTruthy();
+    expect(screen.getAllByText("Excellent").length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText("Loading organization health score")).toBeNull();
+    expect(screen.queryByText("Live GitHub data could not be loaded")).toBeNull();
+  });
+
+  it("shows explicit 403 error state and retry action without fake score", () => {
+    const onRetry = vi.fn();
+
+    render(
+      <CommandCenterScreen
+        healthData={buildHealthModel("live")}
+        activityState={{ isLoading: false, isEmpty: false, hasError: true }}
+        integrationError={{
+          code: "PERMISSION_DENIED",
+          message: "Live GitHub access is not authorized for organization 'githealth-labs'. Add this org to ALLOWED_GITHUB_ORGS or connect an organization that is allowlisted.",
+          status: 403
+        }}
+        onRetry={onRetry}
+      />
+    );
+
+    expect(screen.getByText("Live GitHub data could not be loaded")).toBeTruthy();
+    expect(screen.getAllByText("Live GitHub access is not authorized for organization 'githealth-labs'. Add this org to ALLOWED_GITHUB_ORGS or connect an organization that is allowlisted.").length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText("Health score 0")).toBeNull();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Retry health check" })[0]);
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
   it("does not fallback to mock recent activity in live mode", () => {

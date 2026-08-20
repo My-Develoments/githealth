@@ -68,6 +68,18 @@ export function resolveSectionConnectionLabel(connection: GitHubConnectionViewMo
   return "Connection error";
 }
 
+export function resolveSectionProviderLabel(connection: GitHubConnectionViewModel): string {
+  if (connection.provider === "oauth") {
+    return "GitHub OAuth";
+  }
+
+  if (connection.provider === "app") {
+    return "GitHub App";
+  }
+
+  return "Development fallback";
+}
+
 export function resolveSectionConnectActionLabel(connection: GitHubConnectionViewModel): "Connect GitHub" | "Reconnect GitHub" {
   if (connection.status === "ready_to_connect") {
     return "Connect GitHub";
@@ -77,7 +89,7 @@ export function resolveSectionConnectActionLabel(connection: GitHubConnectionVie
 }
 
 export function shouldShowSectionConnectAction(connection: GitHubConnectionViewModel): boolean {
-  return connection.provider === "app" && !connection.isConnected;
+  return connection.provider !== "pat" && !connection.isConnected;
 }
 
 export function isSectionConnectActionDisabled(connection: GitHubConnectionViewModel): boolean {

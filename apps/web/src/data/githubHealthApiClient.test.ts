@@ -104,4 +104,30 @@ describe("requestJson", () => {
       message: "Unable to reach GitHealth API."
     } satisfies Partial<GitHubHealthApiError>);
   });
+
+  it("sends json post bodies when provided", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json"
+        }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requestJson<{ ok: boolean }>("https://api.example.com/auth/sign-in", {
+      method: "POST",
+      body: {
+        email: "kuldeep@example.com"
+      }
+    });
+
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ email: "kuldeep@example.com" }));
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    });
+  });
 });

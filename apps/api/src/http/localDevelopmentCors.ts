@@ -1,8 +1,13 @@
 import type { NextFunction, Request, Response } from "express";
 
-const ALLOWED_DEV_ORIGINS = new Set(["http://localhost:5173", "http://localhost:5174"]);
-const ALLOWED_METHODS = "GET, OPTIONS";
-const ALLOWED_HEADERS = "Accept, Authorization, x-github-app-session";
+const ALLOWED_DEV_ORIGINS = new Set([
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174"
+]);
+const ALLOWED_METHODS = "GET, POST, OPTIONS";
+const ALLOWED_HEADERS = "Accept, Authorization, Content-Type, x-github-app-session";
 
 export function isLocalDevelopmentCorsEnabled(): boolean {
   return process.env.NODE_ENV !== "production";
@@ -35,7 +40,7 @@ export function localDevelopmentCors(req: Request, res: Response, next: NextFunc
     return;
   }
 
-  if (req.method !== "GET") {
+  if (req.method !== "GET" && req.method !== "POST") {
     next();
     return;
   }

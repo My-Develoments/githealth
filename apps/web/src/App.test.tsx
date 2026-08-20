@@ -2,10 +2,54 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
+const mockedSignOut = vi.fn();
+const defaultSession = {
+  sessionId: "session-1",
+  user: {
+    id: "user-1",
+    email: "kuldeep@example.com",
+    displayName: "Kuldeep",
+    createdAt: "2026-01-01T00:00:00.000Z"
+  },
+  workspace: {
+    id: "workspace-1",
+    name: "Kuldeep's Workspace",
+    ownerUserId: "user-1",
+    createdAt: "2026-01-01T00:00:00.000Z"
+  }
+};
+
+const mockedAuthState: {
+  status: "loading" | "authenticated" | "unauthenticated";
+  session: typeof defaultSession | null;
+  error: { message: string } | null;
+  isContinuingWithGitHub: boolean;
+  signIn: ReturnType<typeof vi.fn>;
+  signUp: ReturnType<typeof vi.fn>;
+  continueWithGitHub: ReturnType<typeof vi.fn>;
+  signOut: ReturnType<typeof vi.fn>;
+  reload: ReturnType<typeof vi.fn>;
+} = {
+  status: "authenticated",
+  session: defaultSession,
+  error: null,
+  isContinuingWithGitHub: false,
+  signIn: vi.fn(),
+  signUp: vi.fn(),
+  continueWithGitHub: vi.fn(),
+  signOut: mockedSignOut,
+  reload: vi.fn()
+};
+
+vi.mock("./data/useAuthSession", () => ({
+  useAuthSession: () => mockedAuthState
+}));
+
 vi.mock("./data/useGitHubHealthData", () => ({
   commandCenterActivityFeed: [],
   useGitHubHealthData: () => ({
     state: "ready",
+    isRefreshing: false,
     commandCenterActivity: { isLoading: false, isEmpty: false, hasError: false },
     viewModels: {
       commandCenter: {
@@ -87,14 +131,22 @@ vi.mock("./data/useGitHubHealthData", () => ({
       callbackRedirectConfigured: false,
       message: "GitHub App is configured and ready to connect."
     },
+    organizationOptions: [],
     error: null,
     reload: vi.fn(),
-    connectGitHub: vi.fn()
+    connectGitHub: vi.fn(),
+    disconnectGitHub: vi.fn(),
+    selectOrganization: vi.fn()
   })
 }));
 
 afterEach(() => {
   cleanup();
+  mockedAuthState.status = "authenticated";
+  mockedAuthState.session = defaultSession;
+  mockedAuthState.error = null;
+  mockedAuthState.isContinuingWithGitHub = false;
+  mockedSignOut.mockReset();
 });
 
 beforeAll(() => {
@@ -115,6 +167,26 @@ beforeEach(() => {
 });
 
 describe("App navigation", () => {
+  it("shows the authentication screen for unauthenticated users", () => {
+    mockedAuthState.status = "unauthenticated";
+    mockedAuthState.session = null;
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Continue with GitHub" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue with GitHub" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Engineering Intelligence Center" })).toBeNull();
+  });
+
+  it("keeps protected content hidden while authentication is unresolved", () => {
+    mockedAuthState.status = "loading";
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "Preparing your GitHealth workspace" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Engineering Intelligence Center" })).toBeNull();
+  });
+
   it("makes all primary sidebar items clickable", () => {
     render(<App />);
 
@@ -185,6 +257,28 @@ describe("App navigation", () => {
     expect(screen.getAllByRole("heading", { name: "GitHub Settings" }).length).toBeGreaterThan(0);
     expect(screen.getByText("Connection Status")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Connect GitHub" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Log out of GitHealth" })).toBeTruthy();
+  });
+
+  it("logs out from the settings screen", async () => {
+    mockedSignOut.mockImplementation(async () => {
+      mockedAuthState.status = "unauthenticated";
+      mockedAuthState.session = null;
+    });
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/settings");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Log out of GitHealth" }));
+
+    await waitFor(() => {
+      expect(mockedSignOut).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("renders the dedicated Organization Health screen for the health-intelligence route", async () => {

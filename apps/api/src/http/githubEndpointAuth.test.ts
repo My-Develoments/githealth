@@ -1,5 +1,7 @@
 import express from "express";
 import { afterEach, describe, expect, it } from "vitest";
+import { signUpUser } from "../application/authService.js";
+import { resetAuthStoreForTests } from "../infrastructure/auth/testAuthStore.js";
 import { createGitHubAppInstallationSession } from "../infrastructure/github/appAuth.js";
 import { getGitHubConfig } from "../infrastructure/github/config.js";
 import { githubEndpointAuth } from "./githubEndpointAuth.js";
@@ -56,14 +58,27 @@ describe("githubEndpointAuth", () => {
   const previousAppPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY;
   const previousAppInstallUrl = process.env.GITHUB_APP_INSTALL_URL;
   const previousAppInstallationId = process.env.GITHUB_APP_INSTALLATION_ID;
+  const previousToken = process.env.GITHUB_TOKEN;
+  const previousOAuthClientId = process.env.GITHUB_OAUTH_CLIENT_ID;
+  const previousOAuthClientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET;
+  const previousOAuthRedirectUri = process.env.GITHUB_OAUTH_REDIRECT_URI;
+  const previousOAuthFrontendRedirectUrl = process.env.GITHUB_OAUTH_FRONTEND_REDIRECT_URL;
+  const previousOAuthTokenEncryptionKey = process.env.GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY;
 
-  afterEach(() => {
+  afterEach(async () => {
+    await resetAuthStoreForTests();
     restoreEnv("API_AUTH_TOKEN", previousApiAuthToken);
     restoreEnv("GITHUB_AUTH_PROVIDER", previousProvider);
     restoreEnv("GITHUB_APP_ID", previousAppId);
     restoreEnv("GITHUB_APP_PRIVATE_KEY", previousAppPrivateKey);
     restoreEnv("GITHUB_APP_INSTALL_URL", previousAppInstallUrl);
     restoreEnv("GITHUB_APP_INSTALLATION_ID", previousAppInstallationId);
+    restoreEnv("GITHUB_TOKEN", previousToken);
+    restoreEnv("GITHUB_OAUTH_CLIENT_ID", previousOAuthClientId);
+    restoreEnv("GITHUB_OAUTH_CLIENT_SECRET", previousOAuthClientSecret);
+    restoreEnv("GITHUB_OAUTH_REDIRECT_URI", previousOAuthRedirectUri);
+    restoreEnv("GITHUB_OAUTH_FRONTEND_REDIRECT_URL", previousOAuthFrontendRedirectUrl);
+    restoreEnv("GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY", previousOAuthTokenEncryptionKey);
   });
 
   it("returns AUTH_MISSING when authorization header is absent", async () => {
@@ -146,6 +161,85 @@ describe("githubEndpointAuth", () => {
       const response = await fetch(`${baseUrl}/health-score/github/organization`);
 
       expect(response.status).toBe(200);
+    });
+  });
+
+  it("returns workspace connection guidance for cookie-authenticated users without a connected app installation", async () => {
+    process.env.API_AUTH_TOKEN = "issue23-token";
+    process.env.GITHUB_AUTH_PROVIDER = "app";
+    process.env.GITHUB_APP_ID = "12345";
+    process.env.GITHUB_APP_PRIVATE_KEY = TEST_PRIVATE_KEY;
+    process.env.GITHUB_APP_INSTALL_URL = "https://github.com/apps/githealth/installations/new";
+
+    const signUpResult = await signUpUser({
+      displayName: "Kuldeep",
+      email: "endpoint-auth-cookie@example.com",
+      password: "secure-pass-123"
+    });
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/health-score/github/organization`, {
+        headers: {
+          Cookie: `githealth_auth_session=${encodeURIComponent(signUpResult.sessionToken)}`
+        }
+      });
+      const body = await response.json() as { code: string; message: string };
+
+      expect(response.status).toBe(401);
+      expect(body.code).toBe("AUTH_MISSING");
+      expect(body.message).toBe("GitHub App installation is not connected for this workspace.");
+    });
+  });
+
+  it("allows cookie-authenticated users in PAT mode when GITHUB_TOKEN is configured", async () => {
+    process.env.API_AUTH_TOKEN = "issue23-token";
+    process.env.GITHUB_AUTH_PROVIDER = "pat";
+    process.env.GITHUB_TOKEN = "pat-token";
+
+    const signUpResult = await signUpUser({
+      displayName: "Kuldeep",
+      email: "endpoint-auth-cookie-pat@example.com",
+      password: "secure-pass-123"
+    });
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/health-score/github/organization`, {
+        headers: {
+          Cookie: `githealth_auth_session=${encodeURIComponent(signUpResult.sessionToken)}`
+        }
+      });
+
+      expect(response.status).toBe(200);
+    });
+  });
+
+  it("does not fall back to GITHUB_TOKEN in oauth mode when workspace OAuth connection is missing", async () => {
+    process.env.API_AUTH_TOKEN = "issue23-token";
+    process.env.GITHUB_AUTH_PROVIDER = "oauth";
+    process.env.GITHUB_OAUTH_CLIENT_ID = "oauth-client-id";
+    process.env.GITHUB_OAUTH_CLIENT_SECRET = "oauth-client-secret";
+    process.env.GITHUB_OAUTH_REDIRECT_URI = "http://localhost:4000/github/connection/callback";
+    process.env.GITHUB_OAUTH_FRONTEND_REDIRECT_URL = "http://localhost:5173/command-center";
+    process.env.GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY = "oauth-encryption-key";
+    process.env.GITHUB_TOKEN = "pat-token-should-not-be-used";
+
+    const signUpResult = await signUpUser({
+      displayName: "Kuldeep",
+      email: "endpoint-auth-cookie-oauth@example.com",
+      password: "secure-pass-123"
+    });
+
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/health-score/github/organization`, {
+        headers: {
+          Cookie: `githealth_auth_session=${encodeURIComponent(signUpResult.sessionToken)}`
+        }
+      });
+      const body = await response.json() as { code: string; message: string };
+
+      expect(response.status).toBe(401);
+      expect(body.code).toBe("AUTH_MISSING");
+      expect(body.message).toBe("GitHub OAuth connection is not configured for this workspace user.");
     });
   });
 });

@@ -48,6 +48,8 @@ describe("OrganizationHealthScreen", () => {
     );
 
     expect(screen.getByText("Loading organization health")).toBeTruthy();
+    expect(screen.getByLabelText("Loading overall health score")).toBeTruthy();
+    expect(screen.getByLabelText("Loading organization category signals")).toBeTruthy();
   });
 
   it("shows connect action when app is ready to connect", () => {
@@ -57,7 +59,7 @@ describe("OrganizationHealthScreen", () => {
       <OrganizationHealthScreen
         healthData={buildHealthData()}
         integrationState="empty"
-        connection={buildConnection({ status: "ready_to_connect", isConnected: false, canConnect: true })}
+        connection={buildConnection({ provider: "oauth", status: "ready_to_connect", isConnected: false, canConnect: true, message: "GitHub OAuth is configured and ready to connect." })}
         onConnectGitHub={onConnectGitHub}
       />
     );

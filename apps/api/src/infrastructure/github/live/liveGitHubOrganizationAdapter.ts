@@ -92,6 +92,42 @@ type SignalTaskResult = {
 
 const GITHUB_PAGE_SIZE = 100;
 
+function logGitHubUpstreamError(params: {
+  status?: number;
+  code: string;
+  message: string;
+  requestUrl: string;
+}): void {
+  const parsedUrl = (() => {
+    try {
+      return new URL(params.requestUrl);
+    } catch {
+      return undefined;
+    }
+  })();
+
+  const shouldLog =
+    params.code === "UPSTREAM_UNAVAILABLE" ||
+    params.code === "AUTH_INVALID" ||
+    params.code === "RATE_LIMITED" ||
+    params.code === "INVALID_RESPONSE" ||
+    parsedUrl?.pathname.startsWith("/orgs/") === true;
+
+  if (!shouldLog) {
+    return;
+  }
+
+  console.warn(
+    JSON.stringify({
+      event: "github_upstream_error",
+      code: params.code,
+      status: params.status,
+      path: parsedUrl?.pathname,
+      message: params.message
+    })
+  );
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -329,20 +365,41 @@ async function requestJsonResponse<T>(url: string, token: string, timeoutMs: num
         // Keep fallback message when error payload is not JSON.
       }
 
-      throw normalizeGitHubHttpError(response.status, message, {
+      const normalizedError = normalizeGitHubHttpError(response.status, message, {
         headers: response.headers,
         message
       });
+
+      logGitHubUpstreamError({
+        status: response.status,
+        code: normalizedError.code,
+        message,
+        requestUrl: url
+      });
+
+      throw normalizedError;
     }
 
-    return {
-      data: (await response.json()) as T,
-      headers: response.headers
-    };
+    try {
+      return {
+        data: (await response.json()) as T,
+        headers: response.headers
+      };
+    } catch {
+      throw new GitHubAdapterError("INVALID_RESPONSE", "GitHub upstream returned an invalid JSON response.", 502, {
+        upstreamStatus: response.status
+      });
+    }
   } catch (error) {
     if (error instanceof GitHubAdapterError) {
       throw error;
     }
+
+    logGitHubUpstreamError({
+      code: "UPSTREAM_UNAVAILABLE",
+      message: "GitHub request failed.",
+      requestUrl: url
+    });
 
     throw new GitHubAdapterError("UPSTREAM_UNAVAILABLE", "GitHub request failed.", 503);
   } finally {
@@ -491,6 +548,30 @@ async function requestOptionalPaginated<TPage, TItem>(
         : []
     };
   } catch (error) {
+    if (
+      error instanceof GitHubAdapterError &&
+      error.code === "INVALID_RESPONSE" &&
+      error.message.toLowerCase().includes("pagination using the `page` parameter is not supported")
+    ) {
+      try {
+        const page = await requestJson<TPage>(url, config);
+        const extractedItems = extractItems(page);
+        return {
+          items: Array.isArray(extractedItems) ? extractedItems : [],
+          issues: []
+        };
+      } catch (fallbackError) {
+        if (fallbackError instanceof GitHubAdapterError) {
+          return {
+            items: undefined,
+            issues: [buildOptionalSignalIssue(fallbackError, signalName, repositoryId)]
+          };
+        }
+
+        throw fallbackError;
+      }
+    }
+
     if (error instanceof GitHubAdapterError) {
       return {
         items: undefined,

@@ -9,9 +9,11 @@ import {
   resolveSectionConnectionLabel,
   resolveSectionConnectionTone,
   resolveSectionDataState,
+  resolveSectionProviderLabel,
   scoreTone,
   shouldShowSectionConnectAction
 } from "./sectionScreenShared";
+import { useAsyncActionState } from "./useAsyncActionState";
 import "./command-center.css";
 
 type GovernanceScreenProps = {
@@ -20,6 +22,7 @@ type GovernanceScreenProps = {
   healthData: CommandCenterHealthViewModel;
   repositoryData: RepositoryUniverseViewModel;
   integrationState: GitHubHealthIntegrationState;
+  isRefreshing?: boolean;
   connection: GitHubConnectionViewModel;
   integrationError?: {
     message: string;
@@ -40,12 +43,14 @@ export function GovernanceScreen({
   healthData,
   repositoryData,
   integrationState,
+  isRefreshing = false,
   connection,
   integrationError,
   onConnectGitHub,
   onRetry
 }: GovernanceScreenProps) {
   const dataState = resolveSectionDataState(integrationState);
+  const isInitialLoading = dataState === "loading" && !isRefreshing;
   const governanceSignal = healthData.categorySignals.find((signal) => signal.key === "governance");
 
   const repositories = repositoryData.repositories;
@@ -70,6 +75,8 @@ export function GovernanceScreen({
   const fallbackInsights = governanceInsights.length > 0 ? governanceInsights : healthData.insights.slice(0, 3);
   const showConnectAction = shouldShowSectionConnectAction(connection);
   const isConnectActionDisabled = isSectionConnectActionDisabled(connection);
+  const connectAction = useAsyncActionState();
+  const retryAction = useAsyncActionState();
 
   return (
     <div className="cc-shell gvs-shell">
@@ -136,6 +143,7 @@ export function GovernanceScreen({
           <div className="cc-header-controls">
             <Badge tone={healthData.source === "mock" ? "warning" : "healthy"}>{`Source: ${healthData.source}`}</Badge>
             <Badge tone={resolveSectionConnectionTone(connection.status)}>{resolveSectionConnectionLabel(connection)}</Badge>
+            {isRefreshing ? <Badge tone="neutral">Refreshing</Badge> : null}
           </div>
         </header>
 
@@ -145,24 +153,34 @@ export function GovernanceScreen({
               <Heading as="h3" size="sm">
                 Governance Summary
               </Heading>
-              <Badge tone={scoreTone(governanceSignal?.score ?? 0)}>
-                {governanceSignal ? `${governanceSignal.score}` : "Unavailable"}
+              <Badge tone={isInitialLoading ? "neutral" : scoreTone(governanceSignal?.score ?? 0)}>
+                {isInitialLoading ? "Loading" : governanceSignal ? `${governanceSignal.score}` : "Unavailable"}
               </Badge>
             </div>
 
-            <Text size="sm" tone="secondary">
-              {governanceSignal
-                ? `${governanceSignal.label} category signal from organization scoring.`
-                : "Governance category signal is unavailable for the current source."}
-            </Text>
+            {isInitialLoading ? (
+              <div className="cc-skeleton" aria-label="Loading governance summary">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : (
+              <>
+                <Text size="sm" tone="secondary">
+                  {governanceSignal
+                    ? `${governanceSignal.label} category signal from organization scoring.`
+                    : "Governance category signal is unavailable for the current source."}
+                </Text>
 
-            <div className="gvs-meta">
-              <span>Repositories evaluated: {healthData.totalRepositories}</span>
-              <span>Low governance score repos: {lowGovernanceRepositories.length}</span>
-              <span>Issue backlog repos: {repositoriesWithIssueBacklog.length}</span>
-              <span>Critical repos: {healthData.pulse.critical}</span>
-              <span>Warning repos: {healthData.pulse.warning}</span>
-            </div>
+                <div className="gvs-meta">
+                  <span>Repositories evaluated: {healthData.totalRepositories}</span>
+                  <span>Low governance score repos: {lowGovernanceRepositories.length}</span>
+                  <span>Issue backlog repos: {repositoriesWithIssueBacklog.length}</span>
+                  <span>Critical repos: {healthData.pulse.critical}</span>
+                  <span>Warning repos: {healthData.pulse.warning}</span>
+                </div>
+              </>
+            )}
           </Panel>
 
           <Panel tone="subtle" className="gvs-card cc-reveal cc-reveal--signals">
@@ -173,7 +191,13 @@ export function GovernanceScreen({
               <Badge tone={integrationState === "partial" ? "warning" : "neutral"}>{integrationState}</Badge>
             </div>
 
-            {healthData.categorySignals.length === 0 ? (
+            {isInitialLoading ? (
+              <div className="cc-skeleton" aria-label="Loading governance signals">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : healthData.categorySignals.length === 0 ? (
               <Text size="sm" tone="muted">No category-level governance signals are available.</Text>
             ) : (
               <ul className="gvs-signal-list" aria-label="Governance category signals">
@@ -194,7 +218,7 @@ export function GovernanceScreen({
               <Heading as="h3" size="sm">
                 GitHub Access
               </Heading>
-              <Badge tone={resolveSectionConnectionTone(connection.status)}>{connection.provider === "app" ? "GitHub App" : "PAT"}</Badge>
+              <Badge tone={resolveSectionConnectionTone(connection.status)}>{resolveSectionProviderLabel(connection)}</Badge>
             </div>
             <Text size="sm" tone="secondary">
               {connection.message}
@@ -210,12 +234,12 @@ export function GovernanceScreen({
                   variant="primary"
                   size="md"
                   onClick={() => {
-                    void onConnectGitHub?.();
+                    void connectAction.run(onConnectGitHub);
                   }}
-                  disabled={isConnectActionDisabled}
+                  disabled={isConnectActionDisabled || connectAction.isPending}
                   aria-label={resolveSectionConnectActionLabel(connection)}
                 >
-                  {resolveSectionConnectActionLabel(connection)}
+                  {connectAction.isPending ? "Connecting..." : resolveSectionConnectActionLabel(connection)}
                 </Button>
               </div>
             ) : null}
@@ -239,8 +263,16 @@ export function GovernanceScreen({
                 The API request completed, but no repository governance context was returned for this organization/source.
               </Text>
               <div className="gvs-actions">
-                <Button variant="secondary" size="md" onClick={() => onRetry?.()} aria-label="Retry governance posture">
-                  Retry
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    void retryAction.run(onRetry);
+                  }}
+                  disabled={retryAction.isPending}
+                  aria-label="Retry governance posture"
+                >
+                  {retryAction.isPending ? "Retrying..." : "Retry"}
                 </Button>
               </div>
             </Panel>
@@ -256,8 +288,16 @@ export function GovernanceScreen({
               </Text>
               {integrationError?.code ? <Badge tone="critical">{integrationError.code}</Badge> : null}
               <div className="gvs-actions">
-                <Button variant="secondary" size="md" onClick={() => onRetry?.()} aria-label="Retry governance posture">
-                  Retry
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    void retryAction.run(onRetry);
+                  }}
+                  disabled={retryAction.isPending}
+                  aria-label="Retry governance posture"
+                >
+                  {retryAction.isPending ? "Retrying..." : "Retry"}
                 </Button>
               </div>
             </Panel>

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { getGitHubConfig } from "./config.js";
+import { getGitHubAppRuntimeConfig, getGitHubConfig } from "./config.js";
 
 function restoreEnv(name: string, previous: string | undefined): void {
   if (typeof previous === "undefined") {
@@ -19,6 +19,11 @@ describe("getGitHubConfig", () => {
   const previousAppInstallationId = process.env.GITHUB_APP_INSTALLATION_ID;
   const previousAppInstallUrl = process.env.GITHUB_APP_INSTALL_URL;
   const previousAppRedirectUrl = process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL;
+  const previousOAuthClientId = process.env.GITHUB_OAUTH_CLIENT_ID;
+  const previousOAuthClientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET;
+  const previousOAuthRedirectUri = process.env.GITHUB_OAUTH_REDIRECT_URI;
+  const previousOAuthFrontendRedirectUrl = process.env.GITHUB_OAUTH_FRONTEND_REDIRECT_URL;
+  const previousOAuthTokenEncryptionKey = process.env.GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY;
 
   afterEach(() => {
     restoreEnv("GITHUB_AUTH_PROVIDER", previousProvider);
@@ -29,6 +34,11 @@ describe("getGitHubConfig", () => {
     restoreEnv("GITHUB_APP_INSTALLATION_ID", previousAppInstallationId);
     restoreEnv("GITHUB_APP_INSTALL_URL", previousAppInstallUrl);
     restoreEnv("GITHUB_APP_ONBOARDING_REDIRECT_URL", previousAppRedirectUrl);
+    restoreEnv("GITHUB_OAUTH_CLIENT_ID", previousOAuthClientId);
+    restoreEnv("GITHUB_OAUTH_CLIENT_SECRET", previousOAuthClientSecret);
+    restoreEnv("GITHUB_OAUTH_REDIRECT_URI", previousOAuthRedirectUri);
+    restoreEnv("GITHUB_OAUTH_FRONTEND_REDIRECT_URL", previousOAuthFrontendRedirectUrl);
+    restoreEnv("GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY", previousOAuthTokenEncryptionKey);
   });
 
   it("trims token and keeps it undefined when blank", () => {
@@ -51,6 +61,44 @@ describe("getGitHubConfig", () => {
     delete process.env.GITHUB_AUTH_PROVIDER;
 
     expect(getGitHubConfig().authProvider).toBe("pat");
+    expect(getGitHubConfig().authMode).toBe("local_pat");
+  });
+
+  it("validates required GitHub OAuth env values when oauth mode is enabled", () => {
+    process.env.GITHUB_AUTH_PROVIDER = "oauth";
+    delete process.env.GITHUB_OAUTH_CLIENT_ID;
+
+    expect(() => getGitHubConfig()).toThrow("Invalid GITHUB_OAUTH_CLIENT_ID value.");
+  });
+
+  it("builds OAuth configuration when provider is oauth", () => {
+    process.env.GITHUB_AUTH_PROVIDER = "oauth";
+    process.env.GITHUB_OAUTH_CLIENT_ID = "oauth-client-id";
+    process.env.GITHUB_OAUTH_CLIENT_SECRET = "oauth-client-secret";
+    process.env.GITHUB_OAUTH_REDIRECT_URI = "http://localhost:4000/github/connection/callback";
+    process.env.GITHUB_OAUTH_FRONTEND_REDIRECT_URL = "http://localhost:5173/settings";
+    process.env.GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY = "super-secret-encryption-key";
+    process.env.GITHUB_OAUTH_SCOPES = "read:org,repo";
+
+    const config = getGitHubConfig();
+
+    expect(config.authProvider).toBe("oauth");
+    expect(config.authMode).toBe("github_oauth");
+    expect(config.oauth?.clientId).toBe("oauth-client-id");
+    expect(config.oauth?.frontendRedirectUrl).toBe("http://localhost:5173/settings");
+    expect(config.oauth?.scopes).toEqual(["read:org", "repo"]);
+  });
+
+  it("normalizes oauth provider values with whitespace and case differences", () => {
+    process.env.GITHUB_AUTH_PROVIDER = "  OAUTH  ";
+    process.env.GITHUB_OAUTH_CLIENT_ID = "oauth-client-id";
+    process.env.GITHUB_OAUTH_CLIENT_SECRET = "oauth-client-secret";
+    process.env.GITHUB_OAUTH_REDIRECT_URI = "http://localhost:4000/github/connection/callback";
+    process.env.GITHUB_OAUTH_FRONTEND_REDIRECT_URL = "http://localhost:5173/settings";
+    process.env.GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY = "super-secret-encryption-key";
+
+    expect(getGitHubConfig().authProvider).toBe("oauth");
+    expect(getGitHubConfig().authMode).toBe("github_oauth");
   });
 
   it("validates GitHub App mode only when explicitly enabled", () => {
@@ -85,6 +133,18 @@ describe("getGitHubConfig", () => {
     expect(config.app?.privateKey).toContain("\n");
     expect(config.app?.installUrl).toBe("https://github.com/apps/githealth/installations/new");
     expect(config.app?.onboardingRedirectUrl).toBe("http://localhost:5173/");
+  });
+
+  it("builds runtime app config when PAT mode is active but app onboarding env is configured", () => {
+    process.env.GITHUB_AUTH_PROVIDER = "pat";
+    process.env.GITHUB_APP_ID = "12345";
+    process.env.GITHUB_APP_PRIVATE_KEY = TEST_PRIVATE_KEY;
+    process.env.GITHUB_APP_INSTALL_URL = "https://github.com/apps/githealth/installations/new";
+    process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL = "http://localhost:5173";
+
+    const runtimeConfig = getGitHubAppRuntimeConfig();
+    expect(runtimeConfig?.authProvider).toBe("app");
+    expect(runtimeConfig?.app?.appId).toBe("12345");
   });
 });
 

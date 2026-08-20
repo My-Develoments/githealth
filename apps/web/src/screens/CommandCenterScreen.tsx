@@ -19,6 +19,7 @@ import type {
 } from "../data/githubHealthViewMappers";
 import type { GitHubConnectionViewModel } from "../data/githubHealthContracts";
 import type { AppScreen } from "../navigation";
+import { useAsyncActionState } from "./useAsyncActionState";
 import "./command-center.css";
 
 function resolveConnectionTone(status: GitHubConnectionViewModel["status"]): "healthy" | "warning" | "neutral" | "critical" | "unknown" {
@@ -42,6 +43,10 @@ function resolveConnectionTone(status: GitHubConnectionViewModel["status"]): "he
 }
 
 function resolveConnectionLabel(connection: GitHubConnectionViewModel): string {
+  if (connection.provider === "pat") {
+    return "Development fallback";
+  }
+
   if (connection.status === "not_configured") {
     return "Not configured";
   }
@@ -70,6 +75,14 @@ function resolveConnectionLabel(connection: GitHubConnectionViewModel): string {
 }
 
 function resolveConnectionActionLabel(connection: GitHubConnectionViewModel): string {
+  if (connection.provider === "oauth") {
+    if (connection.status === "connecting") {
+      return "Connecting...";
+    }
+
+    return "Continue with GitHub";
+  }
+
   if (connection.status === "not_configured") {
     return "GitHub App unavailable";
   }
@@ -86,8 +99,28 @@ function resolveConnectionActionLabel(connection: GitHubConnectionViewModel): st
 }
 
 function resolveConnectionGuidance(connection: GitHubConnectionViewModel): string {
+  if (connection.provider === "oauth") {
+    if (connection.status === "ready_to_connect") {
+      return "Continue with GitHub to authorize your account and load your live organization health data through secure backend APIs.";
+    }
+
+    if (connection.status === "connecting") {
+      return "GitHealth is preparing your secure GitHub OAuth redirect.";
+    }
+
+    if (connection.status === "connected") {
+      return "Your GitHub account is connected. Live organization health data now loads through the authenticated backend session.";
+    }
+
+    if (connection.status === "error" || connection.status === "unauthorized_installation") {
+      return "GitHub OAuth onboarding is currently blocked. Retry the connection check or reconnect your GitHub account.";
+    }
+
+    return "Connect your GitHub account to unlock live organization scans, health scoring, and repository insights.";
+  }
+
   if (connection.provider === "pat") {
-    return "Server-managed access is active. Live GitHub data can load without browser-side onboarding.";
+    return "This environment is using backend PAT fallback for development. It can support local testing, but it is not the authenticated user's GitHub identity.";
   }
 
   if (connection.status === "not_configured") {
@@ -115,10 +148,11 @@ function resolveConnectionGuidance(connection: GitHubConnectionViewModel): strin
 
 function renderConnectionCard(
   connection: GitHubConnectionViewModel,
-  onConnectGitHub: CommandCenterScreenProps["onConnectGitHub"],
+  isConnectActionPending: boolean,
+  onConnectAction: () => void,
   options: { className: string; tone?: "base" | "subtle" | "elevated" | "stronger" }
 ) {
-  const showConnectAction = connection.provider === "app" && !connection.isConnected && connection.canConnect;
+  const showConnectAction = connection.provider !== "pat" && !connection.isConnected && connection.canConnect;
 
   return (
     <Panel tone={options.tone ?? "subtle"} className={options.className}>
@@ -128,7 +162,11 @@ function renderConnectionCard(
             GitHub Connection
           </Text>
           <Heading as="h3" size="md">
-            {connection.provider === "app" ? "GitHub App Onboarding" : "Server GitHub Access"}
+            {connection.provider === "oauth"
+              ? "GitHub OAuth Connection"
+              : connection.provider === "app"
+                ? "GitHub App Onboarding"
+                : "Server GitHub Access"}
           </Heading>
         </div>
         <Badge tone={resolveConnectionTone(connection.status)}>{resolveConnectionLabel(connection)}</Badge>
@@ -142,7 +180,8 @@ function renderConnectionCard(
       </Text>
 
       <div className="cc-connection-card__meta">
-        <span>Provider: {connection.provider === "app" ? "GitHub App" : "Personal access token"}</span>
+        <span>Provider: {connection.provider === "oauth" ? "GitHub OAuth" : connection.provider === "app" ? "GitHub App" : "Personal access token"}</span>
+        {connection.githubLogin ? <span>Account: {connection.githubLogin}</span> : null}
         <span>{connection.isConnected ? "Live access ready" : connection.canConnect ? "Action required" : "Configuration required"}</span>
       </div>
 
@@ -151,13 +190,11 @@ function renderConnectionCard(
           <Button
             variant="primary"
             size="md"
-            onClick={() => {
-              void onConnectGitHub?.();
-            }}
-            disabled={connection.status === "connecting"}
+            onClick={onConnectAction}
+            disabled={connection.status === "connecting" || isConnectActionPending}
             aria-label="Connect GitHub"
           >
-            {resolveConnectionActionLabel(connection)}
+            {isConnectActionPending ? "Connecting..." : resolveConnectionActionLabel(connection)}
           </Button>
         </div>
       ) : null}
@@ -260,6 +297,7 @@ type CommandCenterScreenProps = {
   onExploreUniverse?: () => void;
   healthData?: CommandCenterHealthViewModel;
   activityState?: CommandCenterActivityState;
+  isRefreshing?: boolean;
   connection?: GitHubConnectionViewModel;
   integrationError?: {
     message: string;
@@ -290,6 +328,13 @@ function resolveErrorGuidance(error: CommandCenterScreenProps["integrationError"
     return {
       title: "GitHub permissions are insufficient.",
       action: "Grant required read access to organization health data, then retry."
+    };
+  }
+
+  if (error.code === "NOT_FOUND" || error.status === 404) {
+    return {
+      title: "GitHub organization or repository was not found.",
+      action: "Confirm the selected organization and repository visibility, then retry the health check."
     };
   }
 
@@ -337,6 +382,7 @@ export function CommandCenterScreen({
   onExploreUniverse,
   healthData,
   activityState,
+  isRefreshing = false,
   connection,
   integrationError,
   onConnectGitHub,
@@ -373,11 +419,17 @@ export function CommandCenterScreen({
 
   const resolvedRecentActivity = recentActivity ?? (isMockSource ? recentEngineeringActivityDefaults : []);
   const reducedMotion = usePrefersReducedMotion();
+  const connectAction = useAsyncActionState();
+  const retryAction = useAsyncActionState();
   const errorGuidance = resolveErrorGuidance(integrationError);
   const shouldPromptConnection =
-    resolvedConnection.provider === "app" &&
+    resolvedConnection.provider !== "pat" &&
     !resolvedConnection.isConnected &&
     (resolvedConnection.status === "ready_to_connect" || resolvedConnection.status === "not_configured");
+  const showLoadingPlaceholders = resolvedActivity.isLoading && !isMockSource && !isRefreshing;
+  const showResolvedMetrics = !showLoadingPlaceholders && !resolvedActivity.hasError && resolvedHealth.totalRepositories > 0;
+  const showErrorState = !showLoadingPlaceholders && resolvedActivity.hasError;
+  const showEmptyLiveState = !showLoadingPlaceholders && !resolvedActivity.hasError && !showResolvedMetrics;
 
   const animatedScore = useAnimatedNumber(resolvedHealth.score, 1180, reducedMotion, 260);
   const animatedRepositories = useAnimatedNumber(resolvedHealth.totalRepositories, 960, reducedMotion, 760);
@@ -526,6 +578,7 @@ export function CommandCenterScreen({
 
           <div className="cc-header-controls">
             <Badge tone="neutral">{isMockSource ? commandCenterData.periodLabel : `Source: ${resolvedHealth.source}`}</Badge>
+            {isRefreshing ? <Badge tone="neutral">Refreshing</Badge> : null}
             <label className="cc-search" htmlFor="command-search">
               <span className="sr-only">Search commands</span>
               <input
@@ -553,10 +606,17 @@ export function CommandCenterScreen({
           </div>
         </header>
 
-        {renderConnectionCard(resolvedConnection, onConnectGitHub, {
+        {renderConnectionCard(
+          resolvedConnection,
+          connectAction.isPending,
+          () => {
+            void connectAction.run(onConnectGitHub);
+          },
+          {
           className: "cc-connection-banner cc-reveal cc-reveal--hero",
           tone: "elevated"
-        })}
+          }
+        )}
 
         <section className="cc-grid" aria-label="Command center overview">
           <Panel tone="elevated" className="cc-hero cc-reveal cc-reveal--hero">
@@ -564,101 +624,201 @@ export function CommandCenterScreen({
               <Heading as="h3" size="sm">
                 Organization Health Score
               </Heading>
-              <Badge tone="healthy">{resolvedHealth.scoreStatus}</Badge>
+              <Badge tone={showLoadingPlaceholders ? "neutral" : showResolvedMetrics ? "healthy" : showErrorState ? "critical" : "unknown"}>
+                {showLoadingPlaceholders ? "Loading" : showResolvedMetrics ? resolvedHealth.scoreStatus : showErrorState ? "Error" : "No data"}
+              </Badge>
             </div>
 
-            <div className="cc-score-orb" aria-label={`Health score ${animatedScore}`}>
-              <div className="cc-score-ring" style={{ ["--score" as string]: String(animatedScore) }}>
-                <div className="cc-score-core">
-                  <span className="cc-score-value">{animatedScore}</span>
-                  <span className="cc-score-label">{resolvedHealth.scoreStatus}</span>
+            {showLoadingPlaceholders ? (
+              <>
+                <div className="cc-skeleton cc-skeleton--orb" aria-label="Loading organization health score">
+                  <span />
+                  <span />
+                  <span />
                 </div>
+                <div className="cc-skeleton" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              </>
+            ) : showResolvedMetrics ? (
+              <>
+                <div className="cc-score-orb" aria-label={`Health score ${animatedScore}`}>
+                  <div className="cc-score-ring" style={{ ["--score" as string]: String(animatedScore) }}>
+                    <div className="cc-score-core">
+                      <span className="cc-score-value">{animatedScore}</span>
+                      <span className="cc-score-label">{resolvedHealth.scoreStatus}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="cc-score-trend-wrap">
+                  {isMockSource ? (
+                    <>
+                      <Text className="cc-trend" tone="primary">
+                        {commandCenterData.scoreTrend}
+                      </Text>
+                      <Text size="sm" tone="muted">
+                        {commandCenterData.scoreTrendContext}
+                      </Text>
+                    </>
+                  ) : showResolvedMetrics ? (
+                    <>
+                      <Text className="cc-trend" tone="secondary">
+                        Trend unavailable
+                      </Text>
+                      <Text size="sm" tone="muted">
+                        Historical trend data is not provided by the current live API.
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text className="cc-trend" tone="secondary">
+                        Awaiting live data
+                      </Text>
+                      <Text size="sm" tone="muted">
+                        Connect GitHub and rerun the health check to populate live trend and score data.
+                      </Text>
+                    </>
+                  )}
+                </div>
+
+                <div className="cc-score-contrib" aria-label="Score contributors">
+                  {showResolvedMetrics
+                    ? resolvedHealth.categorySignals.map((signal) => (
+                        <div key={signal.key} className="cc-score-contrib-item">
+                          <span>{signal.label}</span>
+                          <strong>{signal.score}</strong>
+                        </div>
+                      ))
+                    : null}
+                </div>
+              </>
+            ) : showErrorState ? (
+              <div className="cc-empty-live-state" role="status" aria-live="polite">
+                <Text className="cc-trend" tone="primary">
+                  Live GitHub data could not be loaded
+                </Text>
+                <Text size="sm" tone="secondary">
+                  {integrationError?.message || errorGuidance.title}
+                </Text>
+                <Text size="sm" tone="muted">
+                  {errorGuidance.action}
+                </Text>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    void retryAction.run(onRetry);
+                  }}
+                  disabled={retryAction.isPending}
+                  aria-label="Retry health check"
+                >
+                  {retryAction.isPending ? "Retrying..." : "Retry Check"}
+                </Button>
               </div>
-            </div>
-
-            <div className="cc-score-trend-wrap">
-              {isMockSource ? (
-                <>
-                  <Text className="cc-trend" tone="primary">
-                    {commandCenterData.scoreTrend}
-                  </Text>
-                  <Text size="sm" tone="muted">
-                    {commandCenterData.scoreTrendContext}
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text className="cc-trend" tone="secondary">
-                    Trend unavailable
-                  </Text>
-                  <Text size="sm" tone="muted">
-                    Historical trend data is not provided by the current live API.
-                  </Text>
-                </>
-              )}
-            </div>
-
-            <div className="cc-score-contrib" aria-label="Score contributors">
-              {resolvedHealth.categorySignals.map((signal) => (
-                <div key={signal.key} className="cc-score-contrib-item">
-                  <span>{signal.label}</span>
-                  <strong>{signal.score}</strong>
-                </div>
-              ))}
-            </div>
+            ) : (
+              <div className="cc-empty-live-state" role="status" aria-live="polite">
+                <Text className="cc-trend" tone="secondary">
+                  Live GitHub data is pending
+                </Text>
+                <Text size="sm" tone="secondary">
+                  {shouldPromptConnection
+                    ? "Connect GitHub and choose an allowlisted organization to start live scoring."
+                    : "No repositories are available yet for the connected organization."}
+                </Text>
+              </div>
+            )}
           </Panel>
 
           <Panel tone="elevated" className="cc-pulse cc-reveal cc-reveal--pulse-late">
             <Heading as="h3" size="sm">
               Organization Pulse
             </Heading>
-            <ul className="cc-pulse-list">
-              <li>
-                <Text size="sm" tone="muted">
-                  Total repositories
-                </Text>
-                <Heading as="h4" size="lg">
-                  {animatedRepositories}
-                </Heading>
-              </li>
-              <li>
-                <Badge tone="healthy">{resolvedHealth.pulse.healthy} Healthy</Badge>
-                <Badge tone="warning">{resolvedHealth.pulse.warning} Needs attention</Badge>
-                <Badge tone="critical">{resolvedHealth.pulse.critical} Critical</Badge>
-              </li>
-              <li>
-                <Text size="sm" tone="secondary">
-                  Last scan: {resolvedHealth.pulse.lastScan}
-                </Text>
-              </li>
-            </ul>
-            <div className="cc-pulse-wave" aria-hidden="true">
-              <svg viewBox="0 0 320 60" preserveAspectRatio="none">
-                <path d={pulseTrendPath} />
-              </svg>
-            </div>
+            {showLoadingPlaceholders ? (
+              <div className="cc-skeleton" aria-label="Loading organization pulse">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : showResolvedMetrics ? (
+              <>
+                <ul className="cc-pulse-list">
+                  <li>
+                    <Text size="sm" tone="muted">
+                      Total repositories
+                    </Text>
+                    <Heading as="h4" size="lg">
+                      {animatedRepositories}
+                    </Heading>
+                  </li>
+                  <li>
+                    <Badge tone="healthy">{resolvedHealth.pulse.healthy} Healthy</Badge>
+                    <Badge tone="warning">{resolvedHealth.pulse.warning} Needs attention</Badge>
+                    <Badge tone="critical">{resolvedHealth.pulse.critical} Critical</Badge>
+                  </li>
+                  <li>
+                    <Text size="sm" tone="secondary">
+                      Last scan: {resolvedHealth.pulse.lastScan}
+                    </Text>
+                  </li>
+                </ul>
+                <div className="cc-pulse-wave" aria-hidden="true">
+                  <svg viewBox="0 0 320 60" preserveAspectRatio="none">
+                    <path d={pulseTrendPath} />
+                  </svg>
+                </div>
+              </>
+            ) : (
+              <Text size="sm" tone="muted">
+                {resolvedActivity.hasError
+                  ? integrationError?.message || "Unable to load live organization pulse data."
+                  : "Connect GitHub to load your live organization pulse metrics."}
+              </Text>
+            )}
           </Panel>
 
           <div className="cc-signals cc-reveal cc-reveal--signals" aria-label="Category health signals">
-            {resolvedHealth.categorySignals.map((signal, index) => (
-              <Panel key={signal.key} tone="subtle" className="cc-signal-card" style={{ animationDelay: `${index * 90 + 250}ms` }}>
-                <Text size="sm" tone="muted">
-                  {signal.label}
-                </Text>
-                <div className="cc-signal-main">
-                  <Heading as="h3" size="xl">
-                    {Math.round((animatedScore / Math.max(resolvedHealth.score, 1)) * signal.score)}
-                  </Heading>
-                  <Badge tone={signal.tone}>{signal.tone}</Badge>
-                </div>
-                <svg className="cc-sparkline" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
-                  <path d={sparklinePath(signal.sparkline, 120, 26)} />
-                </svg>
-                <Text size="sm" tone="secondary">
-                  Trend {signal.trend}
-                </Text>
-              </Panel>
-            ))}
+            {showLoadingPlaceholders
+              ? [0, 1, 2, 3].map((index) => (
+                  <Panel key={`loading-signal-${index}`} tone="subtle" className="cc-signal-card" style={{ animationDelay: `${index * 90 + 250}ms` }}>
+                    <div className="cc-skeleton" aria-label="Loading health metric card">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  </Panel>
+                ))
+              : showResolvedMetrics
+                ? resolvedHealth.categorySignals.map((signal, index) => (
+                    <Panel key={signal.key} tone="subtle" className="cc-signal-card" style={{ animationDelay: `${index * 90 + 250}ms` }}>
+                      <Text size="sm" tone="muted">
+                        {signal.label}
+                      </Text>
+                      <div className="cc-signal-main">
+                        <Heading as="h3" size="xl">
+                          {Math.round((animatedScore / Math.max(resolvedHealth.score, 1)) * signal.score)}
+                        </Heading>
+                        <Badge tone={signal.tone}>{signal.tone}</Badge>
+                      </div>
+                      <svg className="cc-sparkline" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
+                        <path d={sparklinePath(signal.sparkline, 120, 26)} />
+                      </svg>
+                      <Text size="sm" tone="secondary">
+                        Trend {signal.trend}
+                      </Text>
+                    </Panel>
+                  ))
+                : [
+                    <Panel key="empty-signal" tone="subtle" className="cc-signal-card">
+                      <Text size="sm" tone="muted">
+                        {resolvedActivity.hasError
+                          ? "Health metrics are unavailable until the live API request succeeds."
+                          : "Connect GitHub to load live health metrics for this organization."}
+                      </Text>
+                    </Panel>
+                  ]}
           </div>
 
           <Panel tone="base" className="cc-universe cc-reveal cc-reveal--universe">
@@ -975,8 +1135,16 @@ export function CommandCenterScreen({
                     ? resolvedConnection.message
                     : errorGuidance.action}
                 </Text>
-                <Button variant="secondary" size="sm" onClick={onRetry} aria-label="Retry health check">
-                  Retry Check
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    void retryAction.run(onRetry);
+                  }}
+                  disabled={retryAction.isPending}
+                  aria-label="Retry health check"
+                >
+                  {retryAction.isPending ? "Retrying..." : "Retry Check"}
                 </Button>
               </>
             ) : (

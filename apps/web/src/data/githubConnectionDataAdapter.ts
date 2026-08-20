@@ -1,6 +1,10 @@
 import { requestJson } from "./githubHealthApiClient";
 import { resolveGitHubHealthConfig } from "./githubHealthConfig";
-import type { GitHubConnectionStartResponse, GitHubConnectionStatusResponse } from "./githubHealthContracts";
+import type {
+  GitHubConnectionOrganizationOptionsResponse,
+  GitHubConnectionStartResponse,
+  GitHubConnectionStatusResponse
+} from "./githubHealthContracts";
 
 type ConnectionRequestOptions = {
   signal?: AbortSignal;
@@ -34,4 +38,42 @@ export function startGitHubConnection(signal?: AbortSignal): Promise<GitHubConne
   return requestJson<GitHubConnectionStartResponse>(buildConnectionEndpoint(config.apiBaseUrl, "/github/connection/start"), {
     signal
   });
+}
+
+export function disconnectGitHubConnection(signal?: AbortSignal): Promise<{ ok: boolean }> {
+  const config = resolveGitHubHealthConfig();
+  return requestJson<{ ok: boolean }>(buildConnectionEndpoint(config.apiBaseUrl, "/github/connection/disconnect"), {
+    method: "DELETE",
+    signal
+  });
+}
+
+export function fetchGitHubConnectionOrganizations(
+  options: ConnectionRequestOptions = {}
+): Promise<GitHubConnectionOrganizationOptionsResponse> {
+  const config = resolveGitHubHealthConfig();
+  return requestJson<GitHubConnectionOrganizationOptionsResponse>(
+    buildConnectionEndpoint(config.apiBaseUrl, "/github/connection/organizations"),
+    {
+      signal: options.signal,
+      headers: buildConnectionHeaders(options.installationSession)
+    }
+  );
+}
+
+export function selectGitHubConnectionOrganization(
+  organization: string,
+  signal?: AbortSignal
+): Promise<GitHubConnectionOrganizationOptionsResponse> {
+  const config = resolveGitHubHealthConfig();
+  return requestJson<GitHubConnectionOrganizationOptionsResponse>(
+    buildConnectionEndpoint(config.apiBaseUrl, "/github/connection/organizations/select"),
+    {
+      method: "POST",
+      signal,
+      body: {
+        organization
+      }
+    }
+  );
 }

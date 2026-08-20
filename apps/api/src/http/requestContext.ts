@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
+import type { AuthenticatedAppContext } from "../domain/auth/types.js";
 
 const REQUEST_ID_HEADER = "x-request-id";
 const GITHUB_APP_SESSION_HEADER = "x-github-app-session";
@@ -9,11 +10,12 @@ export const GITHUB_APP_SESSION_COOKIE = "githealth_github_app_session";
 type RequestContextStore = {
   requestId: string;
   githubAppSessionToken?: string;
+  authenticatedApp?: AuthenticatedAppContext;
 };
 
 const requestContextStorage = new AsyncLocalStorage<RequestContextStore>();
 
-function readCookieValue(cookieHeader: string | undefined, name: string): string | undefined {
+export function readCookieValue(cookieHeader: string | undefined, name: string): string | undefined {
   if (typeof cookieHeader !== "string" || cookieHeader.trim().length === 0) {
     return undefined;
   }
@@ -58,4 +60,21 @@ export function getRequestId(res: Response): string {
 
 export function getGitHubAppSessionToken(): string | undefined {
   return requestContextStorage.getStore()?.githubAppSessionToken;
+}
+
+export function setAuthenticatedAppContext(context: AuthenticatedAppContext | undefined): void {
+  const store = requestContextStorage.getStore();
+  if (!store) {
+    return;
+  }
+
+  store.authenticatedApp = context;
+}
+
+export function getAuthenticatedAppContextFromRequestStore(): AuthenticatedAppContext | undefined {
+  return requestContextStorage.getStore()?.authenticatedApp;
+}
+
+export function getAuthenticatedWorkspaceId(): string | undefined {
+  return requestContextStorage.getStore()?.authenticatedApp?.workspace.id;
 }

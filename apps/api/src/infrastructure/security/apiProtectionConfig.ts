@@ -4,6 +4,7 @@ export type ApiProtectionConfig = {
   allowedGitHubOrgSet: Set<string>;
   githubEndpointRateLimitWindowMs: number;
   githubEndpointRateLimitMaxRequests: number;
+  internalServiceTokenBypassEnabled: boolean;
 };
 
 const DEFAULT_GITHUB_ENDPOINT_RATE_LIMIT_WINDOW_MS = 60_000;
@@ -45,6 +46,23 @@ function parseAllowedOrganizations(rawValue: string | undefined): string[] {
   return [...deduped];
 }
 
+function parseOptionalBoolean(rawValue: string | undefined, fallback: boolean): boolean {
+  if (typeof rawValue !== "string" || rawValue.trim().length === 0) {
+    return fallback;
+  }
+
+  const normalized = rawValue.trim().toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+
+  if (normalized === "false") {
+    return false;
+  }
+
+  throw new Error("Invalid INTERNAL_API_BEARER_BYPASS_ENABLED value. Expected true or false.");
+}
+
 export function getApiProtectionConfig(): ApiProtectionConfig {
   const apiAuthToken = parseRequiredToken(process.env.API_AUTH_TOKEN);
   const allowedGitHubOrgs = parseAllowedOrganizations(process.env.ALLOWED_GITHUB_ORGS);
@@ -58,13 +76,18 @@ export function getApiProtectionConfig(): ApiProtectionConfig {
     "GITHUB_ENDPOINT_RATE_LIMIT_MAX_REQUESTS",
     DEFAULT_GITHUB_ENDPOINT_RATE_LIMIT_MAX_REQUESTS
   );
+  const internalServiceTokenBypassEnabled = parseOptionalBoolean(
+    process.env.INTERNAL_API_BEARER_BYPASS_ENABLED,
+    process.env.NODE_ENV === "test"
+  );
 
   return {
     apiAuthToken,
     allowedGitHubOrgs,
     allowedGitHubOrgSet: new Set<string>(allowedGitHubOrgs),
     githubEndpointRateLimitWindowMs,
-    githubEndpointRateLimitMaxRequests
+    githubEndpointRateLimitMaxRequests,
+    internalServiceTokenBypassEnabled
   };
 }
 

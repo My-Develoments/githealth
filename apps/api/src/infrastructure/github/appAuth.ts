@@ -1,7 +1,14 @@
 import { createCipheriv, createDecipheriv, createHash, createPrivateKey, randomBytes, sign } from "node:crypto";
+import { getAuthStore } from "../auth/authStore.js";
 import type { GitHubConfig } from "./config.js";
-import { getGitHubAppSessionToken } from "../../http/requestContext.js";
+import { getGitHubAppRuntimeConfig } from "./config.js";
+import {
+  getAuthenticatedAppContextFromRequestStore,
+  getAuthenticatedWorkspaceId,
+  getGitHubAppSessionToken
+} from "../../http/requestContext.js";
 import { GitHubAdapterError, normalizeGitHubHttpError } from "./errors.js";
+import { decryptSecret } from "../security/secretsCrypto.js";
 
 type CachedInstallationToken = {
   token: string;
@@ -386,33 +393,82 @@ export function getCurrentGitHubAppInstallationSession(
 }
 
 export async function resolveGitHubAccessToken(config: GitHubConfig): Promise<string> {
-  if (config.authProvider === "pat") {
-    if (config.token) {
-      return config.token;
+  const appRuntimeConfig = getGitHubAppRuntimeConfig();
+  const workspaceId = getAuthenticatedWorkspaceId();
+  const authenticatedApp = getAuthenticatedAppContextFromRequestStore();
+  const authStore = getAuthStore();
+  await authStore.initialize();
+  const workspaceConnection = workspaceId
+    ? await authStore.findWorkspaceGitHubConnection(workspaceId)
+    : undefined;
+  const oauthConnection = workspaceId && authenticatedApp
+    ? await authStore.findWorkspaceGitHubOAuthConnection(workspaceId, authenticatedApp.user.id)
+    : undefined;
+
+  if (config.authProvider === "oauth") {
+    if (!config.oauth) {
+      throw new GitHubAdapterError("AUTH_MISSING", "GitHub OAuth configuration is unavailable.", 503);
     }
 
-    throw new GitHubAdapterError("AUTH_MISSING", "GITHUB_TOKEN is required for live GitHub source.", 401);
+    if (!workspaceId || !authenticatedApp || !oauthConnection) {
+      throw new GitHubAdapterError("AUTH_MISSING", "GitHub OAuth connection is required for live GitHub source.", 401);
+    }
+
+    try {
+      return decryptSecret(
+        {
+          ciphertext: oauthConnection.accessTokenCiphertext,
+          iv: oauthConnection.accessTokenIv,
+          tag: oauthConnection.accessTokenTag
+        },
+        config.oauth.tokenEncryptionKey
+      );
+    } catch {
+      throw new GitHubAdapterError("AUTH_INVALID", "Stored GitHub OAuth token could not be decrypted.", 401);
+    }
   }
 
-  const appConfig = config.app;
-  if (!appConfig) {
-    throw new GitHubAdapterError("AUTH_MISSING", "GitHub App configuration is unavailable.", 500);
-  }
-
-  const installationId = appConfig.installationId ?? getCurrentGitHubAppInstallationSession(config)?.installationId;
-  if (!installationId) {
+  if (workspaceConnection && !appRuntimeConfig?.app) {
     throw new GitHubAdapterError(
       "AUTH_MISSING",
-      "GitHub App installation is not connected. Complete GitHub App installation to continue.",
-      401
+      "Workspace GitHub App connection exists but GitHub App runtime configuration is unavailable.",
+      503
     );
   }
 
-  return installationTokenProvider.getToken({
-    apiBaseUrl: config.apiBaseUrl,
-    appId: appConfig.appId,
-    privateKey: appConfig.privateKey,
-    installationId,
-    timeoutMs: config.timeoutMs
-  });
+  if (appRuntimeConfig?.app && workspaceConnection) {
+    return installationTokenProvider.getToken({
+      apiBaseUrl: appRuntimeConfig.apiBaseUrl,
+      appId: appRuntimeConfig.app.appId,
+      privateKey: appRuntimeConfig.app.privateKey,
+      installationId: workspaceConnection.installationId,
+      timeoutMs: appRuntimeConfig.timeoutMs
+    });
+  }
+
+  if (appRuntimeConfig?.app) {
+    const appConfig = appRuntimeConfig.app;
+    const installationId = appConfig.installationId ?? getCurrentGitHubAppInstallationSession(appRuntimeConfig)?.installationId;
+    if (!installationId) {
+      throw new GitHubAdapterError(
+        "AUTH_MISSING",
+        "GitHub App installation is not connected. Complete GitHub App installation to continue.",
+        401
+      );
+    }
+
+    return installationTokenProvider.getToken({
+      apiBaseUrl: appRuntimeConfig.apiBaseUrl,
+      appId: appConfig.appId,
+      privateKey: appConfig.privateKey,
+      installationId,
+      timeoutMs: appRuntimeConfig.timeoutMs
+    });
+  }
+
+  if (config.authProvider === "pat" && config.token) {
+    return config.token;
+  }
+
+  throw new GitHubAdapterError("AUTH_MISSING", "GITHUB_TOKEN is required for live GitHub source.", 401);
 }

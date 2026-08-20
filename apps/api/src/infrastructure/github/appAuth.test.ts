@@ -7,9 +7,14 @@ import {
   resolveGitHubAccessToken
 } from "./appAuth.js";
 import type { GitHubConfig } from "./config.js";
+import { createTestAuthStore } from "../auth/testAuthStore.js";
+import { setAuthStoreForTests } from "../auth/authStore.js";
+import { attachRequestContext, setAuthenticatedAppContext } from "../../http/requestContext.js";
+import { encryptSecret } from "../security/secretsCrypto.js";
 
 afterEach(() => {
   resetGitHubAppInstallationTokenCache();
+  setAuthStoreForTests(undefined);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -87,6 +92,7 @@ describe("resolveGitHubAccessToken", () => {
   it("preserves PAT mode behavior", async () => {
     const config: GitHubConfig = {
       authProvider: "pat",
+      authMode: "local_pat",
       token: "test-token",
       apiBaseUrl: "https://api.github.com",
       timeoutMs: 5000,
@@ -99,12 +105,117 @@ describe("resolveGitHubAccessToken", () => {
 
     await expect(resolveGitHubAccessToken(config)).resolves.toBe("test-token");
   });
+
+  it("decrypts and returns workspace-user scoped OAuth token", async () => {
+    const encryptionKey = "test-encryption-key";
+    const encrypted = encryptSecret("gho_secure_token", encryptionKey);
+
+    const store = createTestAuthStore();
+    await store.initialize();
+    setAuthStoreForTests(store);
+
+    await store.createUserWorkspaceSession({
+      user: {
+        id: "oauth-user-1",
+        email: "oauth-user@example.com",
+        displayName: "OAuth User",
+        passwordHash: "hash",
+        defaultWorkspaceId: "oauth-workspace-1",
+        createdAt: "2026-01-01T00:00:00.000Z"
+      },
+      workspace: {
+        id: "oauth-workspace-1",
+        name: "OAuth Workspace",
+        ownerUserId: "oauth-user-1",
+        createdAt: "2026-01-01T00:00:00.000Z"
+      },
+      session: {
+        id: "oauth-session-1",
+        tokenHash: "oauth-session-token-hash",
+        userId: "oauth-user-1",
+        workspaceId: "oauth-workspace-1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        expiresAt: "2026-01-08T00:00:00.000Z"
+      }
+    });
+
+    await store.upsertWorkspaceGitHubOAuthConnection({
+      workspaceId: "oauth-workspace-1",
+      userId: "oauth-user-1",
+      githubUserId: "123",
+      githubLogin: "octocat",
+      accessTokenCiphertext: encrypted.ciphertext,
+      accessTokenIv: encrypted.iv,
+      accessTokenTag: encrypted.tag,
+      scopes: ["read:org"],
+      connectedAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+
+    const config: GitHubConfig = {
+      authProvider: "oauth",
+      authMode: "github_oauth",
+      oauth: {
+        clientId: "client-id",
+        clientSecret: "client-secret",
+        redirectUri: "http://localhost:4000/github/connection/callback",
+        frontendRedirectUrl: "http://localhost:5173/settings",
+        scopes: ["read:org"],
+        stateTtlMs: 600000,
+        tokenEncryptionKey: encryptionKey,
+        authorizeBaseUrl: "https://github.com/login/oauth/authorize",
+        tokenUrl: "https://github.com/login/oauth/access_token"
+      },
+      apiBaseUrl: "https://api.github.com",
+      timeoutMs: 5000,
+      maxRetries: 0,
+      retryBaseDelayMs: 100,
+      maxPaginationPages: 3,
+      repositoryConcurrency: 4,
+      signalConcurrency: 2
+    };
+
+    const request = {
+      header: (name: string) => (name.toLowerCase() === "x-request-id" ? "req-1" : "")
+    };
+    const response = {
+      setHeader: () => undefined,
+      locals: {}
+    };
+
+    const token = await new Promise<string>((resolve, reject) => {
+      attachRequestContext(request as never, response as never, () => {
+        setAuthenticatedAppContext({
+          sessionId: "oauth-session-1",
+          user: {
+            id: "oauth-user-1",
+            email: "oauth-user@example.com",
+            displayName: "OAuth User",
+            createdAt: "2026-01-01T00:00:00.000Z"
+          },
+          workspace: {
+            id: "oauth-workspace-1",
+            name: "OAuth Workspace",
+            ownerUserId: "oauth-user-1",
+            createdAt: "2026-01-01T00:00:00.000Z"
+          }
+        });
+
+        void resolveGitHubAccessToken(config)
+          .then(resolve)
+          .catch(reject);
+      });
+    });
+
+    expect(token).toBe("gho_secure_token");
+  });
 });
 
 describe("GitHub App installation session", () => {
   it("creates and parses an opaque installation session token", () => {
     const config: GitHubConfig = {
       authProvider: "app",
+      authMode: "github_app",
       app: {
         appId: "12345",
         privateKey: TEST_PRIVATE_KEY,
@@ -129,7 +240,7 @@ describe("GitHub App installation session", () => {
       { now: () => Date.parse("2026-01-01T00:00:00.000Z") }
     );
 
-    expect(token).not.toContain("77");
+    expect(token.startsWith("ghias1.")).toBe(true);
     expect(token).not.toContain("githealth-labs");
     expect(
       parseGitHubAppInstallationSession(config, token, { now: () => Date.parse("2026-01-01T00:10:00.000Z") })

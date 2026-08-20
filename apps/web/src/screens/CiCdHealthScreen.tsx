@@ -9,9 +9,11 @@ import {
   resolveSectionConnectionLabel,
   resolveSectionConnectionTone,
   resolveSectionDataState,
+  resolveSectionProviderLabel,
   scoreTone,
   shouldShowSectionConnectAction
 } from "./sectionScreenShared";
+import { useAsyncActionState } from "./useAsyncActionState";
 import "./command-center.css";
 
 type CiCdHealthScreenProps = {
@@ -20,6 +22,7 @@ type CiCdHealthScreenProps = {
   healthData: CommandCenterHealthViewModel;
   repositoryData: RepositoryUniverseViewModel;
   integrationState: GitHubHealthIntegrationState;
+  isRefreshing?: boolean;
   connection: GitHubConnectionViewModel;
   integrationError?: {
     message: string;
@@ -81,12 +84,14 @@ export function CiCdHealthScreen({
   healthData,
   repositoryData,
   integrationState,
+  isRefreshing = false,
   connection,
   integrationError,
   onConnectGitHub,
   onRetry
 }: CiCdHealthScreenProps) {
   const dataState = resolveSectionDataState(integrationState);
+  const isInitialLoading = dataState === "loading" && !isRefreshing;
   const cicdSignal = healthData.categorySignals.find((signal) => signal.key === "cicd");
 
   const repositories = repositoryData.repositories;
@@ -152,6 +157,8 @@ export function CiCdHealthScreen({
   const fallbackInsights = cicdInsights.length > 0 ? cicdInsights : healthData.insights.slice(0, 3);
   const showConnectAction = shouldShowSectionConnectAction(connection);
   const isConnectActionDisabled = isSectionConnectActionDisabled(connection);
+  const connectAction = useAsyncActionState();
+  const retryAction = useAsyncActionState();
 
   return (
     <div className="cc-shell chs-shell">
@@ -218,6 +225,7 @@ export function CiCdHealthScreen({
           <div className="cc-header-controls">
             <Badge tone={healthData.source === "mock" ? "warning" : "healthy"}>{`Source: ${healthData.source}`}</Badge>
             <Badge tone={resolveSectionConnectionTone(connection.status)}>{resolveSectionConnectionLabel(connection)}</Badge>
+            {isRefreshing ? <Badge tone="neutral">Refreshing</Badge> : null}
           </div>
         </header>
 
@@ -227,26 +235,36 @@ export function CiCdHealthScreen({
               <Heading as="h3" size="sm">
                 Delivery Summary
               </Heading>
-              <Badge tone={scoreTone(cicdSignal?.score ?? 0)}>
-                {cicdSignal ? `${cicdSignal.score}` : "Unavailable"}
+              <Badge tone={isInitialLoading ? "neutral" : scoreTone(cicdSignal?.score ?? 0)}>
+                {isInitialLoading ? "Loading" : cicdSignal ? `${cicdSignal.score}` : "Unavailable"}
               </Badge>
             </div>
 
-            <Text size="sm" tone="secondary">
-              {cicdSignal
-                ? `${cicdSignal.label} category signal from organization scoring.`
-                : "CI / CD category signal is unavailable for the current source."}
-            </Text>
+            {isInitialLoading ? (
+              <div className="cc-skeleton" aria-label="Loading CI/CD summary">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : (
+              <>
+                <Text size="sm" tone="secondary">
+                  {cicdSignal
+                    ? `${cicdSignal.label} category signal from organization scoring.`
+                    : "CI / CD category signal is unavailable for the current source."}
+                </Text>
 
-            <div className="chs-meta">
-              <span>Repositories evaluated: {healthData.totalRepositories}</span>
-              <span>Low CI / CD score repos: {lowCiCdRepositories.length}</span>
-              <span>High PR queue repos: {highQueueRepositories.length}</span>
-              <span>Repos with workflow telemetry: {repositoriesWithWorkflowTelemetry.length}</span>
-              <span>Recent workflow runs: {workflowTelemetrySummary.totalRuns}</span>
-              <span>Critical repos: {healthData.pulse.critical}</span>
-              <span>Warning repos: {healthData.pulse.warning}</span>
-            </div>
+                <div className="chs-meta">
+                  <span>Repositories evaluated: {healthData.totalRepositories}</span>
+                  <span>Low CI / CD score repos: {lowCiCdRepositories.length}</span>
+                  <span>High PR queue repos: {highQueueRepositories.length}</span>
+                  <span>Repos with workflow telemetry: {repositoriesWithWorkflowTelemetry.length}</span>
+                  <span>Recent workflow runs: {workflowTelemetrySummary.totalRuns}</span>
+                  <span>Critical repos: {healthData.pulse.critical}</span>
+                  <span>Warning repos: {healthData.pulse.warning}</span>
+                </div>
+              </>
+            )}
           </Panel>
 
           <Panel tone="subtle" className="chs-card cc-reveal cc-reveal--signals">
@@ -257,7 +275,13 @@ export function CiCdHealthScreen({
               <Badge tone={integrationState === "partial" ? "warning" : "neutral"}>{integrationState}</Badge>
             </div>
 
-            {healthData.categorySignals.length === 0 ? (
+            {isInitialLoading ? (
+              <div className="cc-skeleton" aria-label="Loading CI/CD signals">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : healthData.categorySignals.length === 0 ? (
               <Text size="sm" tone="muted">No category-level CI / CD signals are available.</Text>
             ) : (
               <ul className="chs-signal-list" aria-label="CI/CD category signals">
@@ -278,7 +302,7 @@ export function CiCdHealthScreen({
               <Heading as="h3" size="sm">
                 GitHub Access
               </Heading>
-              <Badge tone={resolveSectionConnectionTone(connection.status)}>{connection.provider === "app" ? "GitHub App" : "PAT"}</Badge>
+              <Badge tone={resolveSectionConnectionTone(connection.status)}>{resolveSectionProviderLabel(connection)}</Badge>
             </div>
             <Text size="sm" tone="secondary">
               {connection.message}
@@ -294,12 +318,12 @@ export function CiCdHealthScreen({
                   variant="primary"
                   size="md"
                   onClick={() => {
-                    void onConnectGitHub?.();
+                    void connectAction.run(onConnectGitHub);
                   }}
-                  disabled={isConnectActionDisabled}
+                  disabled={isConnectActionDisabled || connectAction.isPending}
                   aria-label={resolveSectionConnectActionLabel(connection)}
                 >
-                  {resolveSectionConnectActionLabel(connection)}
+                  {connectAction.isPending ? "Connecting..." : resolveSectionConnectActionLabel(connection)}
                 </Button>
               </div>
             ) : null}
@@ -323,8 +347,16 @@ export function CiCdHealthScreen({
                 The API request completed, but no repository CI / CD context was returned for this organization/source.
               </Text>
               <div className="chs-actions">
-                <Button variant="secondary" size="md" onClick={() => onRetry?.()} aria-label="Retry CI/CD health">
-                  Retry
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    void retryAction.run(onRetry);
+                  }}
+                  disabled={retryAction.isPending}
+                  aria-label="Retry CI/CD health"
+                >
+                  {retryAction.isPending ? "Retrying..." : "Retry"}
                 </Button>
               </div>
             </Panel>
@@ -340,8 +372,16 @@ export function CiCdHealthScreen({
               </Text>
               {integrationError?.code ? <Badge tone="critical">{integrationError.code}</Badge> : null}
               <div className="chs-actions">
-                <Button variant="secondary" size="md" onClick={() => onRetry?.()} aria-label="Retry CI/CD health">
-                  Retry
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    void retryAction.run(onRetry);
+                  }}
+                  disabled={retryAction.isPending}
+                  aria-label="Retry CI/CD health"
+                >
+                  {retryAction.isPending ? "Retrying..." : "Retry"}
                 </Button>
               </div>
             </Panel>

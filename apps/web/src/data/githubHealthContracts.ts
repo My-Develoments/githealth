@@ -1,6 +1,6 @@
 export type GitHubSource = "mock" | "live";
 
-export type GitHubAuthProvider = "pat" | "app";
+export type GitHubAuthProvider = "pat" | "app" | "oauth";
 
 export type GitHubFetchStatus = "complete" | "partial" | "failed";
 
@@ -166,6 +166,7 @@ export type GitHubConnectionState =
   | "not_configured"
   | "ready_to_connect"
   | "installation_completed"
+  | "oauth_connected"
   | "connecting"
   | "connected"
   | "unauthorized_installation"
@@ -181,10 +182,19 @@ export type GitHubConnectionStatusResponse = {
   callbackRedirectConfigured: boolean;
   message: string;
   organization?: string;
+  organizationOptions?: string[];
+  githubLogin?: string;
+  errorCode?: string;
+  upstreamStatus?: number;
+};
+
+export type GitHubConnectionOrganizationOptionsResponse = {
+  selectedOrganization?: string;
+  organizations: string[];
 };
 
 export type GitHubConnectionStartResponse = {
-  provider: "app";
+  provider: "app" | "oauth";
   status: "ready_to_connect";
   connectUrl: string;
 };

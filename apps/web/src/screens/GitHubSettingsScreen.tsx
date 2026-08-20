@@ -1,7 +1,9 @@
+import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Heading, Panel, Text } from "@githealth/ui";
 import type { GitHubConnectionViewModel, GitHubHealthIntegrationState } from "../data/githubHealthContracts";
 import { navItems } from "../mock/commandCenterData";
 import type { AppScreen } from "../navigation";
+import { useAsyncActionState } from "./useAsyncActionState";
 import "./command-center.css";
 
 type GitHubSettingsScreenProps = {
@@ -9,22 +11,33 @@ type GitHubSettingsScreenProps = {
   onNavigate?: (screen: AppScreen) => void;
   connection: GitHubConnectionViewModel;
   integrationState: GitHubHealthIntegrationState;
+  isRefreshing?: boolean;
   integrationError?: {
     message: string;
     code: string;
     status: number;
   } | null;
   connectedOrganization?: string;
+  organizationOptions?: string[];
+  currentUserName?: string;
+  currentWorkspaceName?: string;
   onConnectGitHub?: () => void | Promise<void>;
+  onDisconnectGitHub?: () => void | Promise<void>;
+  onSelectOrganization?: (organization: string) => void | Promise<void>;
   onRetry?: () => void;
+  onLogout?: () => void | Promise<void>;
 };
 
-type SettingsConnectionState = "loading" | "connected" | "disconnected" | "configuration" | "error";
+type SettingsConnectionState = "loading" | "connected" | "disconnected" | "configuration" | "development" | "error";
 
 function resolveSettingsConnectionState(
   connection: GitHubConnectionViewModel,
   integrationState: GitHubHealthIntegrationState
 ): SettingsConnectionState {
+  if (connection.provider === "pat") {
+    return "development";
+  }
+
   if (connection.status === "not_configured") {
     return "configuration";
   }
@@ -45,7 +58,11 @@ function resolveSettingsConnectionState(
 }
 
 function providerLabel(connection: GitHubConnectionViewModel): string {
-  return connection.provider === "app" ? "GitHub App" : "PAT / Local development";
+  if (connection.provider === "oauth") {
+    return "GitHub OAuth";
+  }
+
+  return connection.provider === "app" ? "GitHub App" : "Development fallback";
 }
 
 function stateLabel(state: SettingsConnectionState): string {
@@ -63,6 +80,10 @@ function stateLabel(state: SettingsConnectionState): string {
 
   if (state === "error") {
     return "Needs attention";
+  }
+
+  if (state === "development") {
+    return "Development fallback";
   }
 
   return "Disconnected";
@@ -85,10 +106,18 @@ function stateTone(state: SettingsConnectionState): "healthy" | "warning" | "neu
     return "critical";
   }
 
+  if (state === "development") {
+    return "warning";
+  }
+
   return "neutral";
 }
 
-function primaryActionLabel(connection: GitHubConnectionViewModel): "Connect GitHub" | "Reconnect GitHub" {
+function primaryActionLabel(connection: GitHubConnectionViewModel): "Connect GitHub" | "Reconnect GitHub" | "Manage Connection" {
+  if (connection.isConnected) {
+    return "Manage Connection";
+  }
+
   if (connection.status === "ready_to_connect") {
     return "Connect GitHub";
   }
@@ -96,9 +125,29 @@ function primaryActionLabel(connection: GitHubConnectionViewModel): "Connect Git
   return "Reconnect GitHub";
 }
 
+function showDisconnectAction(connection: GitHubConnectionViewModel): boolean {
+  return connection.provider === "oauth" && connection.isConnected;
+}
+
 function resolveSummary(state: SettingsConnectionState, connection: GitHubConnectionViewModel): string {
+  if (connection.provider === "oauth") {
+    if (state === "loading") {
+      return "Checking GitHub OAuth connection state.";
+    }
+
+    if (state === "connected") {
+      return "GitHub OAuth authentication is active for this user and workspace.";
+    }
+
+    if (state === "error") {
+      return "GitHub OAuth connection requires attention before live data can be trusted.";
+    }
+
+    return "Connect your GitHub account to enable live organization health analysis in this workspace.";
+  }
+
   if (connection.provider === "pat") {
-    return "Server-managed GitHub access is active for this environment.";
+    return "This environment is using server-side PAT fallback for development. No personal GitHub account is connected in the UI.";
   }
 
   if (state === "loading") {
@@ -121,7 +170,15 @@ function resolveSummary(state: SettingsConnectionState, connection: GitHubConnec
 }
 
 function resolveActionAvailability(connection: GitHubConnectionViewModel): { show: boolean; disabled: boolean } {
-  if (connection.provider !== "app" || connection.isConnected) {
+  if (connection.provider === "oauth") {
+    if (connection.status === "connecting") {
+      return { show: true, disabled: true };
+    }
+
+    return { show: true, disabled: !connection.canConnect };
+  }
+
+  if (connection.provider !== "app") {
     return { show: false, disabled: true };
   }
 
@@ -141,13 +198,41 @@ export function GitHubSettingsScreen({
   onNavigate,
   connection,
   integrationState,
+  isRefreshing = false,
   integrationError,
   connectedOrganization,
+  organizationOptions = [],
+  currentUserName,
+  currentWorkspaceName,
   onConnectGitHub,
-  onRetry
+  onDisconnectGitHub,
+  onSelectOrganization,
+  onRetry,
+  onLogout
 }: GitHubSettingsScreenProps) {
   const currentState = resolveSettingsConnectionState(connection, integrationState);
   const action = resolveActionAvailability(connection);
+  const normalizedOrganizationOptions = useMemo(
+    () => [...new Set(organizationOptions.filter((organization) => organization.trim().length > 0))],
+    [organizationOptions]
+  );
+  const effectiveSelectedOrganization = connectedOrganization ?? connection.organization ?? normalizedOrganizationOptions[0];
+  const [pendingOrganization, setPendingOrganization] = useState(effectiveSelectedOrganization ?? "");
+
+  useEffect(() => {
+    setPendingOrganization(effectiveSelectedOrganization ?? "");
+  }, [effectiveSelectedOrganization]);
+
+  const showOrganizationSelector =
+    connection.provider === "oauth" &&
+    connection.isConnected &&
+    normalizedOrganizationOptions.length > 1 &&
+    typeof onSelectOrganization === "function";
+  const connectAction = useAsyncActionState();
+  const disconnectAction = useAsyncActionState();
+  const selectOrganizationAction = useAsyncActionState();
+  const retryAction = useAsyncActionState();
+  const logoutAction = useAsyncActionState();
 
   return (
     <div className="cc-shell ghs-shell">
@@ -210,6 +295,7 @@ export function GitHubSettingsScreen({
           <div className="cc-header-controls">
             <Badge tone={stateTone(currentState)}>{stateLabel(currentState)}</Badge>
             <Badge tone="neutral">{providerLabel(connection)}</Badge>
+            {isRefreshing ? <Badge tone="neutral">Refreshing</Badge> : null}
           </div>
         </header>
 
@@ -228,33 +314,93 @@ export function GitHubSettingsScreen({
 
             <div className="ghs-meta">
               <span>Provider: {providerLabel(connection)}</span>
-              <span>{connection.isConnected ? "Live access available" : "Live access unavailable"}</span>
               <span>
-                Organization: {connectedOrganization ? connectedOrganization : "Not available yet"}
+                {connection.provider === "pat"
+                  ? "OAuth unavailable in this environment"
+                  : connection.isConnected
+                    ? "Live access available"
+                    : "Live access unavailable"}
+              </span>
+              {connection.githubLogin ? <span>GitHub Account: {connection.githubLogin}</span> : null}
+              <span>
+                Organization: {effectiveSelectedOrganization ? effectiveSelectedOrganization : "Not available yet"}
               </span>
             </div>
+
+            {showOrganizationSelector ? (
+              <div className="ghs-org-selector">
+                <label htmlFor="oauth-org-selector">Organization</label>
+                <select
+                  id="oauth-org-selector"
+                  value={pendingOrganization}
+                  onChange={(event) => setPendingOrganization(event.target.value)}
+                  aria-label="Select GitHub organization"
+                >
+                  {normalizedOrganizationOptions.map((organization) => (
+                    <option key={organization} value={organization}>
+                      {organization}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  disabled={
+                    !pendingOrganization ||
+                    pendingOrganization === effectiveSelectedOrganization ||
+                    selectOrganizationAction.isPending
+                  }
+                  onClick={() => {
+                    if (!pendingOrganization || pendingOrganization === effectiveSelectedOrganization) {
+                      return;
+                    }
+
+                    void selectOrganizationAction.run(() => onSelectOrganization?.(pendingOrganization));
+                  }}
+                  aria-label="Switch organization"
+                >
+                  {selectOrganizationAction.isPending ? "Switching..." : "Switch organization"}
+                </Button>
+              </div>
+            ) : null}
 
             {action.show ? (
               <div className="ghs-actions">
                 <Button
                   variant="primary"
                   size="md"
-                  disabled={action.disabled}
+                  disabled={action.disabled || connectAction.isPending}
                   onClick={() => {
-                    void onConnectGitHub?.();
+                    void connectAction.run(onConnectGitHub);
                   }}
                   aria-label={primaryActionLabel(connection)}
                 >
-                  {primaryActionLabel(connection)}
+                  {connectAction.isPending ? "Connecting..." : primaryActionLabel(connection)}
                 </Button>
+                {showDisconnectAction(connection) ? (
+                  <Button
+                    variant="tertiary"
+                    size="md"
+                    onClick={() => {
+                      void disconnectAction.run(onDisconnectGitHub);
+                    }}
+                    disabled={disconnectAction.isPending}
+                    aria-label="Disconnect GitHub"
+                  >
+                    {disconnectAction.isPending ? "Disconnecting..." : "Disconnect GitHub"}
+                  </Button>
+                ) : null}
                 {currentState === "error" ? (
                   <Button
                     variant="tertiary"
                     size="md"
-                    onClick={() => onRetry?.()}
+                    onClick={() => {
+                      void retryAction.run(onRetry);
+                    }}
+                    disabled={retryAction.isPending}
                     aria-label="Retry status"
                   >
-                    Retry status
+                    {retryAction.isPending ? "Retrying..." : "Retry status"}
                   </Button>
                 ) : null}
               </div>
@@ -263,14 +409,27 @@ export function GitHubSettingsScreen({
 
           <Panel tone="subtle" className="ghs-card cc-reveal cc-reveal--signals">
             <Heading as="h3" size="sm">
-              What This Screen Shows
+              Workspace Access
             </Heading>
             <Text size="sm" tone="secondary">
-              Status and provider metadata come from the existing connection status endpoint and frontend data adapters.
+              Signed in as {currentUserName ?? "Authenticated user"}.
             </Text>
             <Text size="sm" tone="muted">
-              Credentials such as PATs, private keys, JWTs, and installation access tokens are never rendered in this UI.
+              Workspace: {currentWorkspaceName ?? "Workspace unavailable"}. Credentials and access tokens are never rendered in this UI.
             </Text>
+            <div className="ghs-actions">
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => {
+                  void logoutAction.run(onLogout);
+                }}
+                disabled={logoutAction.isPending}
+                aria-label="Log out of GitHealth"
+              >
+                {logoutAction.isPending ? "Logging out..." : "Log out"}
+              </Button>
+            </div>
           </Panel>
 
           <Panel tone="subtle" className="ghs-card cc-reveal cc-reveal--pulse-late">
@@ -281,7 +440,9 @@ export function GitHubSettingsScreen({
               {integrationError?.message || "If GitHub connection fails, check API environment configuration and organization authorization settings."}
             </Text>
             <Text size="sm" tone="muted">
-              For local PAT mode, keep credentials server-side and continue using environment-based API authentication.
+              {connection.provider === "pat"
+                ? "PAT remains a backend-only local development fallback. It is not treated as the signed-in user's GitHub identity and is never exposed in the browser."
+                : "OAuth and any server-managed credentials stay on the API side and are never exposed in the browser."}
             </Text>
           </Panel>
         </section>

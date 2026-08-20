@@ -9,9 +9,11 @@ import {
   resolveSectionConnectionLabel,
   resolveSectionConnectionTone,
   resolveSectionDataState,
+  resolveSectionProviderLabel,
   scoreTone,
   shouldShowSectionConnectAction
 } from "./sectionScreenShared";
+import { useAsyncActionState } from "./useAsyncActionState";
 import "./command-center.css";
 
 type OrganizationHealthScreenProps = {
@@ -19,6 +21,7 @@ type OrganizationHealthScreenProps = {
   onNavigate?: (screen: AppScreen) => void;
   healthData: CommandCenterHealthViewModel;
   integrationState: GitHubHealthIntegrationState;
+  isRefreshing?: boolean;
   connection: GitHubConnectionViewModel;
   integrationError?: {
     message: string;
@@ -38,6 +41,7 @@ export function OrganizationHealthScreen({
   onNavigate,
   healthData,
   integrationState,
+  isRefreshing = false,
   connection,
   integrationError,
   onConnectGitHub,
@@ -45,6 +49,10 @@ export function OrganizationHealthScreen({
 }: OrganizationHealthScreenProps) {
   const dataState = resolveSectionDataState(integrationState);
   const hasLiveData = dataState === "ready" && healthData.totalRepositories > 0;
+  const isLoading = dataState === "loading";
+  const providerLabel = resolveSectionProviderLabel(connection);
+  const connectAction = useAsyncActionState();
+  const retryAction = useAsyncActionState();
 
   return (
     <div className="cc-shell ohs-shell">
@@ -111,6 +119,7 @@ export function OrganizationHealthScreen({
           <div className="cc-header-controls">
             <Badge tone={healthData.source === "mock" ? "warning" : "healthy"}>{`Source: ${healthData.source}`}</Badge>
             <Badge tone={resolveSectionConnectionTone(connection.status)}>{resolveSectionConnectionLabel(connection)}</Badge>
+            {isRefreshing ? <Badge tone="neutral">Refreshing</Badge> : null}
           </div>
         </header>
 
@@ -120,23 +129,37 @@ export function OrganizationHealthScreen({
               <Heading as="h3" size="sm">
                 Overall Health
               </Heading>
-              <Badge tone={scoreTone(healthData.score)}>
-                {healthData.scoreStatus}
+              <Badge tone={isLoading ? "neutral" : scoreTone(healthData.score)}>
+                {isLoading ? "Loading" : healthData.scoreStatus}
               </Badge>
             </div>
 
-            <div className="ohs-score">
-              <span className="ohs-score__value">{healthData.score}</span>
-              <span className="ohs-score__label">Overall score</span>
-            </div>
+            {isLoading ? (
+              <div className="cc-skeleton" aria-label="Loading overall health score">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : hasLiveData ? (
+              <>
+                <div className="ohs-score">
+                  <span className="ohs-score__value">{healthData.score}</span>
+                  <span className="ohs-score__label">Overall score</span>
+                </div>
 
-            <div className="ohs-meta">
-              <span>Repositories: {healthData.totalRepositories}</span>
-              <span>Healthy: {healthData.pulse.healthy}</span>
-              <span>Warning: {healthData.pulse.warning}</span>
-              <span>Critical: {healthData.pulse.critical}</span>
-              <span>Last scan: {healthData.pulse.lastScan}</span>
-            </div>
+                <div className="ohs-meta">
+                  <span>Repositories: {healthData.totalRepositories}</span>
+                  <span>Healthy: {healthData.pulse.healthy}</span>
+                  <span>Warning: {healthData.pulse.warning}</span>
+                  <span>Critical: {healthData.pulse.critical}</span>
+                  <span>Last scan: {healthData.pulse.lastScan}</span>
+                </div>
+              </>
+            ) : (
+              <Text size="sm" tone="muted">
+                {integrationError?.message || "Connect GitHub and run a live scan to load organization health metrics."}
+              </Text>
+            )}
           </Panel>
 
           <Panel tone="subtle" className="ohs-card cc-reveal cc-reveal--signals">
@@ -147,7 +170,13 @@ export function OrganizationHealthScreen({
               <Badge tone={integrationState === "partial" ? "warning" : "neutral"}>{integrationState}</Badge>
             </div>
 
-            {healthData.categorySignals.length === 0 ? (
+            {isLoading ? (
+              <div className="cc-skeleton" aria-label="Loading organization category signals">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : healthData.categorySignals.length === 0 ? (
               <Text size="sm" tone="muted">No category signals are available for the current source.</Text>
             ) : (
               <ul className="ohs-signal-list" aria-label="Health category signals">
@@ -166,7 +195,7 @@ export function OrganizationHealthScreen({
               <Heading as="h3" size="sm">
                 GitHub Connection
               </Heading>
-              <Badge tone={resolveSectionConnectionTone(connection.status)}>{connection.provider === "app" ? "GitHub App" : "PAT"}</Badge>
+              <Badge tone={resolveSectionConnectionTone(connection.status)}>{providerLabel}</Badge>
             </div>
             <Text size="sm" tone="secondary">
               {connection.message}
@@ -185,12 +214,12 @@ export function OrganizationHealthScreen({
                   variant="primary"
                   size="md"
                   onClick={() => {
-                    void onConnectGitHub?.();
+                    void connectAction.run(onConnectGitHub);
                   }}
-                  disabled={isSectionConnectActionDisabled(connection)}
+                  disabled={isSectionConnectActionDisabled(connection) || connectAction.isPending}
                   aria-label={resolveSectionConnectActionLabel(connection)}
                 >
-                  {resolveSectionConnectActionLabel(connection)}
+                  {connectAction.isPending ? "Connecting..." : resolveSectionConnectActionLabel(connection)}
                 </Button>
               </div>
             ) : null}
@@ -216,8 +245,16 @@ export function OrganizationHealthScreen({
                 The API request completed, but no repositories were returned for this organization/source.
               </Text>
               <div className="ohs-actions">
-                <Button variant="secondary" size="md" onClick={() => onRetry?.()} aria-label="Retry organization health">
-                  Retry
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    void retryAction.run(onRetry);
+                  }}
+                  disabled={retryAction.isPending}
+                  aria-label="Retry organization health"
+                >
+                  {retryAction.isPending ? "Retrying..." : "Retry"}
                 </Button>
               </div>
             </Panel>
@@ -233,8 +270,16 @@ export function OrganizationHealthScreen({
               </Text>
               {integrationError?.code ? <Badge tone="critical">{integrationError.code}</Badge> : null}
               <div className="ohs-actions">
-                <Button variant="secondary" size="md" onClick={() => onRetry?.()} aria-label="Retry organization health">
-                  Retry
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    void retryAction.run(onRetry);
+                  }}
+                  disabled={retryAction.isPending}
+                  aria-label="Retry organization health"
+                >
+                  {retryAction.isPending ? "Retrying..." : "Retry"}
                 </Button>
               </div>
             </Panel>

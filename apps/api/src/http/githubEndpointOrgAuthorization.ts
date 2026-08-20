@@ -17,10 +17,20 @@ export function authorizeGitHubOrganizationForSource(
 
   const config = getApiProtectionConfig();
   if (!isAllowedGitHubOrganization(organization, config.allowedGitHubOrgSet)) {
+    console.warn(
+      JSON.stringify({
+        event: "github_org_authorization_denied",
+        source: source ?? "live",
+        requestedOrganization: organization,
+        allowedOrganizations: config.allowedGitHubOrgs,
+        reason: "organization_not_allowlisted"
+      })
+    );
+
     sendApiError(res, {
       status: 403,
       code: "PERMISSION_DENIED",
-      message: "Requested organization is not authorized for live GitHub health access."
+      message: `Live GitHub access is not authorized for organization '${organization}'. Add this org to ALLOWED_GITHUB_ORGS or connect an organization that is allowlisted.`
     });
     return false;
   }

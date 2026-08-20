@@ -139,6 +139,17 @@ The API uses the following environment variables:
 ### Core server
 
 - `PORT` (defaults to `4000`)
+- `DATABASE_URL`
+- `DATABASE_SSL_MODE` (`disable` by default, `require` for managed TLS-enforced Postgres)
+
+Recommended for Neon and other managed PostgreSQL providers:
+
+```env
+DATABASE_URL=
+DATABASE_SSL_MODE=require
+```
+
+When `DATABASE_SSL_MODE=require` is set, the API connects with TLS and certificate verification enabled.
 
 ### GitHub integration settings
 
@@ -155,6 +166,7 @@ The API uses the following environment variables:
 
 - `API_AUTH_TOKEN`
 - `ALLOWED_GITHUB_ORGS`
+- `INTERNAL_API_BEARER_BYPASS_ENABLED` (defaults to `true` in tests and `false` otherwise)
 - `GITHUB_ENDPOINT_RATE_LIMIT_WINDOW_MS` (defaults to `60000`)
 - `GITHUB_ENDPOINT_RATE_LIMIT_MAX_REQUESTS` (defaults to `60`)
 

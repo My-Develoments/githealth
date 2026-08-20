@@ -62,8 +62,25 @@ describe("localDevelopmentCors", () => {
 
       expect(response.status).toBe(200);
       expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5174");
-      expect(response.headers.get("access-control-allow-methods")).toBe("GET, OPTIONS");
-      expect(response.headers.get("access-control-allow-headers")).toBe("Accept, Authorization, x-github-app-session");
+      expect(response.headers.get("access-control-allow-methods")).toBe("GET, POST, OPTIONS");
+      expect(response.headers.get("access-control-allow-headers")).toBe("Accept, Authorization, Content-Type, x-github-app-session");
+      expect(response.headers.get("access-control-allow-credentials")).toBe("true");
+      expect(response.headers.get("vary")).toContain("Origin");
+    });
+  });
+
+  it("allows 127.0.0.1 development origins to read GET responses", async () => {
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/health`, {
+        headers: {
+          Origin: "http://127.0.0.1:5173"
+        }
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:5173");
+      expect(response.headers.get("access-control-allow-methods")).toBe("GET, POST, OPTIONS");
+      expect(response.headers.get("access-control-allow-headers")).toBe("Accept, Authorization, Content-Type, x-github-app-session");
       expect(response.headers.get("access-control-allow-credentials")).toBe("true");
       expect(response.headers.get("vary")).toContain("Origin");
     });
@@ -75,15 +92,15 @@ describe("localDevelopmentCors", () => {
         method: "OPTIONS",
         headers: {
           Origin: "http://localhost:5173",
-          "Access-Control-Request-Method": "GET",
-          "Access-Control-Request-Headers": "Authorization, Accept, x-github-app-session"
+          "Access-Control-Request-Method": "POST",
+          "Access-Control-Request-Headers": "Authorization, Accept, Content-Type, x-github-app-session"
         }
       });
 
       expect(response.status).toBe(204);
       expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
-      expect(response.headers.get("access-control-allow-methods")).toBe("GET, OPTIONS");
-      expect(response.headers.get("access-control-allow-headers")).toBe("Accept, Authorization, x-github-app-session");
+      expect(response.headers.get("access-control-allow-methods")).toBe("GET, POST, OPTIONS");
+      expect(response.headers.get("access-control-allow-headers")).toBe("Accept, Authorization, Content-Type, x-github-app-session");
       expect(response.headers.get("access-control-allow-credentials")).toBe("true");
     });
   });

@@ -9,9 +9,11 @@ import {
   resolveSectionConnectionLabel,
   resolveSectionConnectionTone,
   resolveSectionDataState,
+  resolveSectionProviderLabel,
   scoreTone,
   shouldShowSectionConnectAction
 } from "./sectionScreenShared";
+import { useAsyncActionState } from "./useAsyncActionState";
 import "./command-center.css";
 
 type SecurityPostureScreenProps = {
@@ -20,6 +22,7 @@ type SecurityPostureScreenProps = {
   healthData: CommandCenterHealthViewModel;
   repositoryData: RepositoryUniverseViewModel;
   integrationState: GitHubHealthIntegrationState;
+  isRefreshing?: boolean;
   connection: GitHubConnectionViewModel;
   integrationError?: {
     message: string;
@@ -40,12 +43,14 @@ export function SecurityPostureScreen({
   healthData,
   repositoryData,
   integrationState,
+  isRefreshing = false,
   connection,
   integrationError,
   onConnectGitHub,
   onRetry
 }: SecurityPostureScreenProps) {
   const dataState = resolveSectionDataState(integrationState);
+  const isInitialLoading = dataState === "loading" && !isRefreshing;
   const securitySignal = healthData.categorySignals.find((signal) => signal.key === "security");
 
   const repositories = repositoryData.repositories;
@@ -70,6 +75,8 @@ export function SecurityPostureScreen({
   const fallbackInsights = securityInsights.length > 0 ? securityInsights : healthData.insights.slice(0, 3);
   const showConnectAction = shouldShowSectionConnectAction(connection);
   const isConnectActionDisabled = isSectionConnectActionDisabled(connection);
+  const connectAction = useAsyncActionState();
+  const retryAction = useAsyncActionState();
 
   return (
     <div className="cc-shell shs-shell">
@@ -136,6 +143,7 @@ export function SecurityPostureScreen({
           <div className="cc-header-controls">
             <Badge tone={healthData.source === "mock" ? "warning" : "healthy"}>{`Source: ${healthData.source}`}</Badge>
             <Badge tone={resolveSectionConnectionTone(connection.status)}>{resolveSectionConnectionLabel(connection)}</Badge>
+            {isRefreshing ? <Badge tone="neutral">Refreshing</Badge> : null}
           </div>
         </header>
 
@@ -145,22 +153,32 @@ export function SecurityPostureScreen({
               <Heading as="h3" size="sm">
                 Security Summary
               </Heading>
-              <Badge tone={scoreTone(securitySignal?.score ?? 0)}>
-                {securitySignal ? `${securitySignal.score}` : "Unavailable"}
+              <Badge tone={isInitialLoading ? "neutral" : scoreTone(securitySignal?.score ?? 0)}>
+                {isInitialLoading ? "Loading" : securitySignal ? `${securitySignal.score}` : "Unavailable"}
               </Badge>
             </div>
 
-            <Text size="sm" tone="secondary">
-              {securitySignal ? `${securitySignal.label} category signal from organization scoring.` : "Security category signal is unavailable for the current source."}
-            </Text>
+            {isInitialLoading ? (
+              <div className="cc-skeleton" aria-label="Loading security summary">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : (
+              <>
+                <Text size="sm" tone="secondary">
+                  {securitySignal ? `${securitySignal.label} category signal from organization scoring.` : "Security category signal is unavailable for the current source."}
+                </Text>
 
-            <div className="shs-meta">
-              <span>Repositories evaluated: {healthData.totalRepositories}</span>
-              <span>Repositories with alerts: {repositoriesWithAlerts.length}</span>
-              <span>Total security alerts: {totalSecurityAlerts}</span>
-              <span>Critical repos: {healthData.pulse.critical}</span>
-              <span>Warning repos: {healthData.pulse.warning}</span>
-            </div>
+                <div className="shs-meta">
+                  <span>Repositories evaluated: {healthData.totalRepositories}</span>
+                  <span>Repositories with alerts: {repositoriesWithAlerts.length}</span>
+                  <span>Total security alerts: {totalSecurityAlerts}</span>
+                  <span>Critical repos: {healthData.pulse.critical}</span>
+                  <span>Warning repos: {healthData.pulse.warning}</span>
+                </div>
+              </>
+            )}
           </Panel>
 
           <Panel tone="subtle" className="shs-card cc-reveal cc-reveal--signals">
@@ -171,7 +189,13 @@ export function SecurityPostureScreen({
               <Badge tone={integrationState === "partial" ? "warning" : "neutral"}>{integrationState}</Badge>
             </div>
 
-            {healthData.categorySignals.length === 0 ? (
+            {isInitialLoading ? (
+              <div className="cc-skeleton" aria-label="Loading security signals">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : healthData.categorySignals.length === 0 ? (
               <Text size="sm" tone="muted">No category-level security signals are available.</Text>
             ) : (
               <ul className="shs-signal-list" aria-label="Security category signals">
@@ -192,7 +216,7 @@ export function SecurityPostureScreen({
               <Heading as="h3" size="sm">
                 GitHub Access
               </Heading>
-              <Badge tone={resolveSectionConnectionTone(connection.status)}>{connection.provider === "app" ? "GitHub App" : "PAT"}</Badge>
+              <Badge tone={resolveSectionConnectionTone(connection.status)}>{resolveSectionProviderLabel(connection)}</Badge>
             </div>
             <Text size="sm" tone="secondary">
               {connection.message}
@@ -208,12 +232,12 @@ export function SecurityPostureScreen({
                   variant="primary"
                   size="md"
                   onClick={() => {
-                    void onConnectGitHub?.();
+                    void connectAction.run(onConnectGitHub);
                   }}
-                  disabled={isConnectActionDisabled}
+                  disabled={isConnectActionDisabled || connectAction.isPending}
                   aria-label={resolveSectionConnectActionLabel(connection)}
                 >
-                  {resolveSectionConnectActionLabel(connection)}
+                  {connectAction.isPending ? "Connecting..." : resolveSectionConnectActionLabel(connection)}
                 </Button>
               </div>
             ) : null}
@@ -237,8 +261,16 @@ export function SecurityPostureScreen({
                 The API request completed, but no repository security context was returned for this organization/source.
               </Text>
               <div className="shs-actions">
-                <Button variant="secondary" size="md" onClick={() => onRetry?.()} aria-label="Retry security posture">
-                  Retry
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    void retryAction.run(onRetry);
+                  }}
+                  disabled={retryAction.isPending}
+                  aria-label="Retry security posture"
+                >
+                  {retryAction.isPending ? "Retrying..." : "Retry"}
                 </Button>
               </div>
             </Panel>
@@ -254,8 +286,16 @@ export function SecurityPostureScreen({
               </Text>
               {integrationError?.code ? <Badge tone="critical">{integrationError.code}</Badge> : null}
               <div className="shs-actions">
-                <Button variant="secondary" size="md" onClick={() => onRetry?.()} aria-label="Retry security posture">
-                  Retry
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    void retryAction.run(onRetry);
+                  }}
+                  disabled={retryAction.isPending}
+                  aria-label="Retry security posture"
+                >
+                  {retryAction.isPending ? "Retrying..." : "Retry"}
                 </Button>
               </div>
             </Panel>

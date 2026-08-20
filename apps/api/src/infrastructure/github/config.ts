@@ -1,7 +1,8 @@
 import { createPrivateKey } from "node:crypto";
 import { GitHubAdapterError } from "./errors.js";
 
-export type GitHubAuthProvider = "pat" | "app";
+export type GitHubAuthProvider = "pat" | "app" | "oauth";
+export type GitHubAuthMode = "local_pat" | "github_app" | "github_oauth";
 
 export type GitHubAppConfig = {
   appId: string;
@@ -15,8 +16,20 @@ export type GitHubAppConfig = {
 
 export type GitHubConfig = {
   authProvider: GitHubAuthProvider;
+  authMode: GitHubAuthMode;
   token?: string;
   app?: GitHubAppConfig;
+  oauth?: {
+    clientId: string;
+    clientSecret: string;
+    redirectUri: string;
+    frontendRedirectUrl: string;
+    scopes: string[];
+    stateTtlMs: number;
+    tokenEncryptionKey: string;
+    authorizeBaseUrl: string;
+    tokenUrl: string;
+  };
   apiBaseUrl: string;
   timeoutMs: number;
   maxRetries: number;
@@ -25,6 +38,35 @@ export type GitHubConfig = {
   repositoryConcurrency: number;
   signalConcurrency: number;
 };
+
+function hasAnyGitHubAppEnvConfigured(): boolean {
+  const keys = [
+    "GITHUB_APP_ID",
+    "GITHUB_APP_PRIVATE_KEY",
+    "GITHUB_APP_INSTALLATION_ID",
+    "GITHUB_APP_INSTALL_URL",
+    "GITHUB_APP_ONBOARDING_REDIRECT_URL"
+  ] as const;
+
+  return keys.some((key) => {
+    const value = process.env[key];
+    return typeof value === "string" && value.trim().length > 0;
+  });
+}
+
+function hasAnyGitHubOAuthEnvConfigured(): boolean {
+  const keys = [
+    "GITHUB_OAUTH_CLIENT_ID",
+    "GITHUB_OAUTH_CLIENT_SECRET",
+    "GITHUB_OAUTH_REDIRECT_URI",
+    "GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY"
+  ] as const;
+
+  return keys.some((key) => {
+    const value = process.env[key];
+    return typeof value === "string" && value.trim().length > 0;
+  });
+}
 
 function normalizeGitHubAuthProvider(rawValue: string | undefined): GitHubAuthProvider {
   const normalized = typeof rawValue === "string" ? rawValue.trim().toLowerCase() : "";
@@ -36,7 +78,25 @@ function normalizeGitHubAuthProvider(rawValue: string | undefined): GitHubAuthPr
     return "app";
   }
 
+  if (normalized === "oauth") {
+    return "oauth";
+  }
+
   throw new GitHubAdapterError("INVALID_RESPONSE", "Invalid GITHUB_AUTH_PROVIDER value.", 500);
+}
+
+function parsePositiveInteger(rawValue: string | undefined, envName: string, fallback: number): number {
+  const normalized = parseOptionalString(rawValue);
+  if (!normalized) {
+    return fallback;
+  }
+
+  const value = Number(normalized);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new GitHubAdapterError("INVALID_RESPONSE", `Invalid ${envName} value.`, 500);
+  }
+
+  return value;
 }
 
 function parseRequiredString(rawValue: string | undefined, envName: string): string {
@@ -136,6 +196,51 @@ function buildGitHubAppConfig(): GitHubAppConfig {
   };
 }
 
+function parseScopes(rawValue: string | undefined): string[] {
+  const normalized = parseOptionalString(rawValue);
+  if (!normalized) {
+    return ["read:org", "repo"];
+  }
+
+  return [...new Set(normalized.split(",").map((scope) => scope.trim()).filter((scope) => scope.length > 0))];
+}
+
+function buildGitHubOAuthConfig() {
+  const clientId = parseRequiredString(process.env.GITHUB_OAUTH_CLIENT_ID, "GITHUB_OAUTH_CLIENT_ID");
+  const clientSecret = parseRequiredString(process.env.GITHUB_OAUTH_CLIENT_SECRET, "GITHUB_OAUTH_CLIENT_SECRET");
+  const redirectUri = parseOptionalHttpUrl(process.env.GITHUB_OAUTH_REDIRECT_URI, "GITHUB_OAUTH_REDIRECT_URI");
+  if (!redirectUri) {
+    throw new GitHubAdapterError("INVALID_RESPONSE", "Invalid GITHUB_OAUTH_REDIRECT_URI value.", 500);
+  }
+
+  const frontendRedirectUrl =
+    parseOptionalHttpUrl(process.env.GITHUB_OAUTH_FRONTEND_REDIRECT_URL, "GITHUB_OAUTH_FRONTEND_REDIRECT_URL") ??
+    parseOptionalHttpUrl(process.env.GITHUB_APP_ONBOARDING_REDIRECT_URL, "GITHUB_APP_ONBOARDING_REDIRECT_URL");
+
+  if (!frontendRedirectUrl) {
+    throw new GitHubAdapterError(
+      "INVALID_RESPONSE",
+      "GitHub OAuth mode requires GITHUB_OAUTH_FRONTEND_REDIRECT_URL.",
+      500
+    );
+  }
+
+  return {
+    clientId,
+    clientSecret,
+    redirectUri,
+    frontendRedirectUrl,
+    scopes: parseScopes(process.env.GITHUB_OAUTH_SCOPES),
+    stateTtlMs: parsePositiveInteger(process.env.GITHUB_OAUTH_STATE_TTL_MS, "GITHUB_OAUTH_STATE_TTL_MS", 600000),
+    tokenEncryptionKey: parseRequiredString(
+      process.env.GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY,
+      "GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY"
+    ),
+    authorizeBaseUrl: "https://github.com/login/oauth/authorize",
+    tokenUrl: "https://github.com/login/oauth/access_token"
+  };
+}
+
 export function getGitHubConfig(): GitHubConfig {
   const authProvider = normalizeGitHubAuthProvider(process.env.GITHUB_AUTH_PROVIDER);
 
@@ -189,11 +294,16 @@ export function getGitHubConfig(): GitHubConfig {
   }
 
   const app = authProvider === "app" ? buildGitHubAppConfig() : undefined;
+  const oauth = authProvider === "oauth" ? buildGitHubOAuthConfig() : undefined;
+  const authMode: GitHubAuthMode =
+    authProvider === "oauth" ? "github_oauth" : authProvider === "app" ? "github_app" : "local_pat";
 
   return {
     authProvider,
+    authMode,
     token,
     app,
+    oauth,
     apiBaseUrl,
     timeoutMs,
     maxRetries,
@@ -201,5 +311,37 @@ export function getGitHubConfig(): GitHubConfig {
     maxPaginationPages,
     repositoryConcurrency,
     signalConcurrency
+  };
+}
+
+export function getOptionalGitHubAppConfig(): GitHubAppConfig | undefined {
+  if (!hasAnyGitHubAppEnvConfigured()) {
+    return undefined;
+  }
+
+  return buildGitHubAppConfig();
+}
+
+export function getOptionalGitHubOAuthConfig(): NonNullable<GitHubConfig["oauth"]> | undefined {
+  if (!hasAnyGitHubOAuthEnvConfigured()) {
+    return undefined;
+  }
+
+  return buildGitHubOAuthConfig();
+}
+
+export function getGitHubAppRuntimeConfig(): GitHubConfig | undefined {
+  const baseConfig = getGitHubConfig();
+  const appConfig = baseConfig.authProvider === "app" ? baseConfig.app : getOptionalGitHubAppConfig();
+
+  if (!appConfig) {
+    return undefined;
+  }
+
+  return {
+    ...baseConfig,
+    authProvider: "app",
+    authMode: "github_app",
+    app: appConfig
   };
 }

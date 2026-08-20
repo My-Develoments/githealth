@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitHubSettingsScreen } from "./GitHubSettingsScreen";
 import type { GitHubConnectionViewModel, GitHubHealthIntegrationState } from "../data/githubHealthContracts";
@@ -24,12 +24,15 @@ describe("GitHubSettingsScreen", () => {
     render(
       <GitHubSettingsScreen
         connection={buildConnection({
+          provider: "oauth",
           status: "connected",
           isConnected: true,
           canConnect: true,
-          hasInstallationId: true,
+          hasInstallationId: false,
+          installUrlConfigured: false,
           callbackRedirectConfigured: true,
-          message: "GitHub App installation is connected."
+          message: "GitHub OAuth is connected for this workspace.",
+          githubLogin: "octocat"
         })}
         integrationState="ready"
         connectedOrganization="My-Develoments"
@@ -37,9 +40,11 @@ describe("GitHubSettingsScreen", () => {
     );
 
     expect(screen.getAllByText("Connected").length).toBeGreaterThan(0);
-    expect(screen.getByText("Provider: GitHub App")).toBeTruthy();
+    expect(screen.getByText("Provider: GitHub OAuth")).toBeTruthy();
+    expect(screen.getByText("GitHub Account: octocat")).toBeTruthy();
     expect(screen.getByText("Organization: My-Develoments")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Connect GitHub" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Manage Connection" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Disconnect GitHub" })).toBeTruthy();
   });
 
   it("uses Connect GitHub for ready-to-connect app mode", () => {
@@ -55,6 +60,34 @@ describe("GitHubSettingsScreen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }));
     expect(onConnectGitHub).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows connect loading state while async connect is in progress", async () => {
+    let resolveConnect: (() => void) | undefined;
+    const onConnectGitHub = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveConnect = resolve;
+        })
+    );
+
+    render(
+      <GitHubSettingsScreen
+        connection={buildConnection({ status: "ready_to_connect", canConnect: true })}
+        integrationState="empty"
+        onConnectGitHub={onConnectGitHub}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }));
+
+    const button = screen.getByRole("button", { name: "Connect GitHub" });
+    expect(button.textContent).toBe("Connecting...");
+    expect(button.getAttribute("aria-disabled") === "true" || button.hasAttribute("disabled")).toBe(true);
+
+    await act(async () => {
+      resolveConnect?.();
+    });
   });
 
   it("uses Reconnect GitHub when connection requires attention", () => {
@@ -103,10 +136,69 @@ describe("GitHubSettingsScreen", () => {
       />
     );
 
-    expect(screen.getByText("PAT / Local development")).toBeTruthy();
-    expect(screen.getByText("Server-managed GitHub access is active for this environment.")).toBeTruthy();
+    expect(screen.getAllByText("Development fallback").length).toBeGreaterThan(0);
+    expect(screen.getByText("This environment is using server-side PAT fallback for development. No personal GitHub account is connected in the UI.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Connect GitHub" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Reconnect GitHub" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Disconnect GitHub" })).toBeNull();
+  });
+
+  it("invokes disconnect action for connected oauth account", () => {
+    const onDisconnectGitHub = vi.fn();
+
+    render(
+      <GitHubSettingsScreen
+        connection={buildConnection({
+          provider: "oauth",
+          status: "connected",
+          isConnected: true,
+          canConnect: true,
+          hasInstallationId: false,
+          installUrlConfigured: false,
+          callbackRedirectConfigured: true,
+          githubLogin: "octocat",
+          message: "GitHub OAuth is connected for this workspace."
+        })}
+        integrationState="ready"
+        onDisconnectGitHub={onDisconnectGitHub}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect GitHub" }));
+    expect(onDisconnectGitHub).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows organization selector for multi-org OAuth connections and switches org", () => {
+    const onSelectOrganization = vi.fn();
+
+    render(
+      <GitHubSettingsScreen
+        connection={buildConnection({
+          provider: "oauth",
+          status: "connected",
+          isConnected: true,
+          canConnect: true,
+          hasInstallationId: false,
+          installUrlConfigured: false,
+          callbackRedirectConfigured: true,
+          githubLogin: "octocat",
+          message: "GitHub OAuth is connected for this workspace."
+        })}
+        integrationState="ready"
+        connectedOrganization="xebia-playground"
+        organizationOptions={["xebia-playground", "xebia"]}
+        onSelectOrganization={onSelectOrganization}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Select GitHub organization"), {
+      target: {
+        value: "xebia"
+      }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch organization" }));
+    expect(onSelectOrganization).toHaveBeenCalledWith("xebia");
   });
 
   it("shows configuration-required state when app onboarding is unavailable", () => {
